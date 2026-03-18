@@ -1,0 +1,58 @@
+// API Configuration
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+// App Configuration
+export const APP_NAME = 'Auxilia Admin';
+export const APP_DESCRIPTION = 'AI-Powered Parametric Insurance Admin Dashboard';
+
+// Navigation Items
+export const NAV_ITEMS = [
+  { name: 'Dashboard', href: '/', icon: 'LayoutDashboard' },
+  { name: 'Policies', href: '/policies', icon: 'FileText' },
+  { name: 'Claims', href: '/claims', icon: 'ClipboardList' },
+  { name: 'Riders', href: '/riders', icon: 'Users' },
+  { name: 'Analytics', href: '/analytics', icon: 'BarChart3' },
+  { name: 'Triggers', href: '/triggers', icon: 'Zap' },
+  { name: 'Settings', href: '/settings', icon: 'Settings' },
+] as const;
+
+// Status Colors
+export const STATUS_COLORS = {
+  active: 'bg-green-100 text-green-800',
+  pending: 'bg-yellow-100 text-yellow-800',
+  approved: 'bg-blue-100 text-blue-800',
+  rejected: 'bg-red-100 text-red-800',
+  expired: 'bg-gray-100 text-gray-800',
+  processing: 'bg-purple-100 text-purple-800',
+} as const;
+
+// Trigger Types
+export const TRIGGER_TYPES = {
+  rain: { label: 'Heavy Rain', icon: 'CloudRain', color: 'blue' },
+  traffic: { label: 'Traffic Jam', icon: 'Car', color: 'orange' },
+  surge: { label: 'Surge Pricing', icon: 'TrendingUp', color: 'purple' },
+  accident: { label: 'Accident Zone', icon: 'AlertTriangle', color: 'red' },
+} as const;
+
+// Chart Colors
+export const CHART_COLORS = {
+  primary: '#FF6B35',
+  secondary: '#4ECDC4',
+  tertiary: '#45B7D1',
+  quaternary: '#96CEB4',
+  danger: '#EF4444',
+  warning: '#F59E0B',
+  success: '#10B981',
+};
+
+// Zones
+export const MUMBAI_ZONES = [
+  { id: 'andheri', name: 'Andheri', riskLevel: 'high' },
+  { id: 'bandra', name: 'Bandra', riskLevel: 'medium' },
+  { id: 'colaba', name: 'Colaba', riskLevel: 'low' },
+  { id: 'dadar', name: 'Dadar', riskLevel: 'high' },
+  { id: 'kurla', name: 'Kurla', riskLevel: 'medium' },
+  { id: 'malad', name: 'Malad', riskLevel: 'medium' },
+  { id: 'powai', name: 'Powai', riskLevel: 'low' },
+  { id: 'thane', name: 'Thane', riskLevel: 'high' },
+] as const;
