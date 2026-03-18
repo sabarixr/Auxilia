@@ -1,39 +1,35 @@
 """
-News API Service
+News API Service with Gemini AI Analysis
 Fetches news for accident/incident detection in zones
-Used for parametric insurance triggers based on reported incidents
+Uses Gemini AI to intelligently analyze headlines and extract relevant incidents
 """
 import httpx
+import google.generativeai as genai
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 from app.core.config import settings
 from app.models.schemas import NewsIncident
 import logging
-import re
+import json
 
 logger = logging.getLogger(__name__)
 
 NEWS_API_BASE_URL = "https://newsapi.org/v2"
 
-# Keywords for incident detection
-INCIDENT_KEYWORDS = {
-    "accident": ["accident", "crash", "collision", "hit and run", "vehicle accident", "road accident"],
-    "weather": ["flood", "flooding", "waterlogging", "heavy rain", "storm", "cyclone", "thunderstorm"],
-    "traffic": ["traffic jam", "road blocked", "road closure", "traffic disruption", "gridlock"],
-    "infrastructure": ["pothole", "road damage", "bridge collapse", "road cave", "sinkhole"],
-    "safety": ["robbery", "theft", "assault", "violence", "unsafe", "danger zone"]
-}
-
 
 class NewsService:
     """
-    NewsAPI integration for incident detection.
-    Monitors news for accidents and incidents that could trigger insurance payouts.
+    NewsAPI integration with Gemini AI for intelligent incident detection.
+    Uses LLM to accurately identify and classify traffic/road incidents.
     """
     
     def __init__(self):
         self.api_key = settings.NEWS_API_KEY
         self.client = httpx.AsyncClient(timeout=30.0)
+        
+        # Initialize Gemini
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        self.model = genai.GenerativeModel('gemini-1.5-flash')
     
     async def search_incidents(
         self, 
@@ -43,21 +39,32 @@ class NewsService:
     ) -> List[NewsIncident]:
         """
         Search news for incidents in a city.
-        Returns list of detected incidents with severity scoring.
+        Uses Gemini AI to intelligently filter and classify incidents.
+        """
+        try:
+            # Fetch raw news articles
+            articles = await self._fetch_news(city, hours_back)
+            
+            if not articles:
+                return []
+            
+            # Use Gemini to analyze articles
+            analyzed_incidents = await self._analyze_with_gemini(articles, city, incident_type)
+            
+            return analyzed_incidents
+        except Exception as e:
+            logger.error(f"News service error: {e}")
+            return []
+    
+    async def _fetch_news(self, city: str, hours_back: int = 24) -> List[Dict]:
+        """
+        Fetch raw news articles from NewsAPI.
         """
         try:
             url = f"{NEWS_API_BASE_URL}/everything"
             
-            # Build search query
-            keywords = []
-            if incident_type and incident_type in INCIDENT_KEYWORDS:
-                keywords = INCIDENT_KEYWORDS[incident_type]
-            else:
-                # Search all incident types
-                for kw_list in INCIDENT_KEYWORDS.values():
-                    keywords.extend(kw_list)
-            
-            query = f'({" OR ".join(keywords)}) AND {city}'
+            # Broad search query - let Gemini do the filtering
+            query = f'{city} (traffic OR accident OR road OR weather OR flood OR incident)'
             
             from_date = (datetime.utcnow() - timedelta(hours=hours_back)).strftime("%Y-%m-%dT%H:%M:%S")
             
@@ -67,26 +74,136 @@ class NewsService:
                 "language": "en",
                 "sortBy": "publishedAt",
                 "from": from_date,
-                "pageSize": 50
+                "pageSize": 30
             }
             
             response = await self.client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
             
-            incidents = []
-            for article in data.get("articles", []):
-                incident = self._parse_article_to_incident(article, city)
-                if incident:
-                    incidents.append(incident)
-            
-            return incidents
+            return data.get("articles", [])
         except httpx.HTTPError as e:
             logger.error(f"NewsAPI error: {e}")
             return []
-        except Exception as e:
-            logger.error(f"News service error: {e}")
+    
+    async def _analyze_with_gemini(
+        self, 
+        articles: List[Dict], 
+        city: str,
+        incident_type: str = None
+    ) -> List[NewsIncident]:
+        """
+        Use Gemini AI to analyze news articles and extract relevant incidents.
+        """
+        try:
+            # Prepare articles for analysis
+            articles_text = []
+            for i, article in enumerate(articles[:20]):  # Limit to 20 for API efficiency
+                title = article.get("title", "")
+                description = article.get("description", "") or ""
+                articles_text.append(f"{i+1}. Title: {title}\n   Description: {description}")
+            
+            articles_combined = "\n\n".join(articles_text)
+            
+            prompt = f"""Analyze these news headlines from {city}, India and identify ONLY articles that are about ACTUAL traffic/road incidents that would affect delivery riders and gig workers.
+
+INCLUDE articles about:
+- Road accidents (vehicle crashes, collisions, hit-and-run)
+- Traffic disruptions (road blocks, diversions, heavy congestion due to specific events)
+- Weather impacts on roads (flooding, waterlogging, storm damage)
+- Infrastructure issues (potholes causing accidents, road cave-ins, bridge issues)
+- Safety incidents on roads (robbery on highways, unsafe areas for riders)
+
+EXCLUDE articles about:
+- Stock market crashes, economic accidents, political events
+- Sports news, entertainment news
+- General weather forecasts without road impact
+- Crime not related to roads/delivery workers
+- Accidents in other countries/cities
+
+For each RELEVANT incident, provide a JSON response in this exact format:
+{{
+  "incidents": [
+    {{
+      "article_index": 1,
+      "incident_type": "accident|weather|traffic|infrastructure|safety",
+      "severity": 0.1 to 1.0,
+      "location": "specific area/road name if mentioned, otherwise '{city}'",
+      "summary": "brief 1-line summary",
+      "is_relevant": true,
+      "reasoning": "why this affects delivery riders"
+    }}
+  ]
+}}
+
+If no relevant incidents found, return: {{"incidents": []}}
+
+NEWS ARTICLES:
+{articles_combined}
+
+Respond with ONLY valid JSON, no other text."""
+
+            response = self.model.generate_content(prompt)
+            response_text = response.text.strip()
+            
+            # Clean up response (remove markdown code blocks if present)
+            if response_text.startswith("```"):
+                response_text = response_text.split("```")[1]
+                if response_text.startswith("json"):
+                    response_text = response_text[4:]
+            response_text = response_text.strip()
+            
+            # Parse JSON response
+            analysis = json.loads(response_text)
+            
+            # Convert to NewsIncident objects
+            incidents = []
+            for item in analysis.get("incidents", []):
+                if not item.get("is_relevant", False):
+                    continue
+                
+                idx = item.get("article_index", 1) - 1
+                if idx < 0 or idx >= len(articles):
+                    continue
+                
+                article = articles[idx]
+                
+                # Filter by incident type if specified
+                if incident_type and item.get("incident_type") != incident_type:
+                    continue
+                
+                incident = NewsIncident(
+                    title=article.get("title", ""),
+                    description=item.get("summary", article.get("description", "")),
+                    source=article.get("source", {}).get("name", ""),
+                    url=article.get("url", ""),
+                    published_at=self._parse_date(article.get("publishedAt")),
+                    incident_type=item.get("incident_type", "accident"),
+                    severity=float(item.get("severity", 0.5)),
+                    location=item.get("location", city),
+                    city=city,
+                    is_trigger_relevant=float(item.get("severity", 0.5)) >= 0.5
+                )
+                incidents.append(incident)
+            
+            logger.info(f"Gemini analyzed {len(articles)} articles, found {len(incidents)} relevant incidents")
+            return incidents
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini response: {e}")
             return []
+        except Exception as e:
+            logger.error(f"Gemini analysis error: {e}")
+            return []
+    
+    def _parse_date(self, date_str: str) -> datetime:
+        """Parse ISO date string to datetime."""
+        if not date_str:
+            return datetime.utcnow()
+        try:
+            return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        except:
+            return datetime.utcnow()
     
     async def get_top_headlines(
         self, 
@@ -123,26 +240,18 @@ class NewsService:
         city: str
     ) -> Dict[str, Any]:
         """
-        Detect incidents in a specific zone.
+        Detect incidents in a specific zone using AI analysis.
         Returns aggregated incident data for trigger evaluation.
         """
         try:
-            # Search for incidents in the zone/area
-            query = f'"{zone_name}" OR "{city}" AND (accident OR crash OR flood OR traffic)'
+            # Fetch and analyze incidents
+            incidents = await self.search_incidents(city, hours_back=24)
             
-            url = f"{NEWS_API_BASE_URL}/everything"
-            params = {
-                "apiKey": self.api_key,
-                "q": query,
-                "language": "en",
-                "sortBy": "publishedAt",
-                "from": (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S"),
-                "pageSize": 20
-            }
-            
-            response = await self.client.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
+            # Filter incidents that might be in this zone
+            zone_incidents = []
+            for incident in incidents:
+                if zone_name.lower() in incident.location.lower() or incident.location == city:
+                    zone_incidents.append(incident)
             
             # Categorize incidents
             categorized = {
@@ -151,115 +260,62 @@ class NewsService:
                 "traffic": 0,
                 "infrastructure": 0,
                 "safety": 0,
-                "total": 0,
-                "articles": []
+                "total": len(zone_incidents),
+                "articles": [],
+                "ai_analyzed": True
             }
             
-            for article in data.get("articles", []):
-                title = article.get("title", "").lower()
-                description = article.get("description", "").lower() if article.get("description") else ""
-                content = title + " " + description
+            for incident in zone_incidents:
+                incident_type = incident.incident_type
+                if incident_type in categorized:
+                    categorized[incident_type] += 1
+                elif incident_type == "accident":
+                    categorized["accidents"] += 1
                 
-                for category, keywords in INCIDENT_KEYWORDS.items():
-                    if any(kw in content for kw in keywords):
-                        categorized[category + "s" if category != "safety" else "safety"] += 1
-                        categorized["total"] += 1
-                        categorized["articles"].append({
-                            "title": article.get("title"),
-                            "source": article.get("source", {}).get("name"),
-                            "url": article.get("url"),
-                            "published": article.get("publishedAt"),
-                            "category": category
-                        })
-                        break
+                categorized["articles"].append({
+                    "title": incident.title,
+                    "source": incident.source,
+                    "url": incident.url,
+                    "published": incident.published_at.isoformat(),
+                    "category": incident.incident_type,
+                    "severity": incident.severity,
+                    "location": incident.location,
+                    "ai_summary": incident.description
+                })
             
             return categorized
         except Exception as e:
             logger.error(f"Zone incidents error: {e}")
-            return {"accidents": 0, "weather": 0, "traffic": 0, "total": 0, "articles": []}
+            return {"accidents": 0, "weather": 0, "traffic": 0, "total": 0, "articles": [], "ai_analyzed": False}
     
-    def _parse_article_to_incident(self, article: Dict, city: str) -> Optional[NewsIncident]:
+    async def get_real_time_alerts(self, city: str) -> List[Dict[str, Any]]:
         """
-        Parse a news article to extract incident information.
+        Get real-time incident alerts for a city.
+        Returns high-severity incidents from the last 6 hours.
         """
-        title = article.get("title", "").lower()
-        description = article.get("description", "").lower() if article.get("description") else ""
-        content = title + " " + description
-        
-        # Detect incident type
-        incident_type = None
-        for category, keywords in INCIDENT_KEYWORDS.items():
-            if any(kw in content for kw in keywords):
-                incident_type = category
-                break
-        
-        if not incident_type:
-            return None
-        
-        # Calculate severity (simple heuristic)
-        severity = self._calculate_severity(content, incident_type)
-        
-        # Try to extract location from content
-        location = self._extract_location(content, city)
-        
-        return NewsIncident(
-            title=article.get("title", ""),
-            description=article.get("description", ""),
-            source=article.get("source", {}).get("name", ""),
-            url=article.get("url", ""),
-            published_at=datetime.fromisoformat(article.get("publishedAt", "").replace("Z", "+00:00")) if article.get("publishedAt") else datetime.utcnow(),
-            incident_type=incident_type,
-            severity=severity,
-            location=location,
-            city=city,
-            is_trigger_relevant=severity >= 0.5
-        )
-    
-    def _calculate_severity(self, content: str, incident_type: str) -> float:
-        """
-        Calculate incident severity score (0.0 to 1.0).
-        """
-        severity = 0.3  # Base severity
-        
-        # Severity keywords
-        high_severity = ["fatal", "death", "killed", "serious", "major", "multiple", "casualties"]
-        medium_severity = ["injury", "injured", "damage", "blocked", "disruption"]
-        
-        if any(word in content for word in high_severity):
-            severity = 0.9
-        elif any(word in content for word in medium_severity):
-            severity = 0.6
-        
-        # Adjust by incident type
-        type_multipliers = {
-            "accident": 1.0,
-            "weather": 0.9,
-            "traffic": 0.5,
-            "infrastructure": 0.7,
-            "safety": 0.8
-        }
-        
-        severity *= type_multipliers.get(incident_type, 1.0)
-        
-        return min(1.0, severity)
-    
-    def _extract_location(self, content: str, city: str) -> str:
-        """
-        Try to extract specific location from content.
-        """
-        # Common location patterns in Indian addresses
-        patterns = [
-            r"near\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
-            r"at\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
-            r"in\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:area|road|street|junction|circle|nagar|colony))",
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, content, re.IGNORECASE)
-            if match:
-                return match.group(1)
-        
-        return city
+        try:
+            incidents = await self.search_incidents(city, hours_back=6)
+            
+            alerts = []
+            for incident in incidents:
+                if incident.severity >= 0.6:
+                    alerts.append({
+                        "type": incident.incident_type,
+                        "title": incident.title,
+                        "location": incident.location,
+                        "severity": incident.severity,
+                        "time": incident.published_at.isoformat(),
+                        "source": incident.source,
+                        "url": incident.url
+                    })
+            
+            # Sort by severity (highest first)
+            alerts.sort(key=lambda x: x["severity"], reverse=True)
+            
+            return alerts[:10]  # Return top 10 alerts
+        except Exception as e:
+            logger.error(f"Real-time alerts error: {e}")
+            return []
     
     def is_incident_trigger_active(
         self, 
@@ -269,7 +325,7 @@ class NewsService:
         """
         Check if incident count exceeds trigger threshold.
         """
-        threshold = threshold or settings.INCIDENT_THRESHOLD
+        threshold = threshold or settings.ACCIDENT_THRESHOLD_COUNT
         relevant_incidents = [i for i in incidents if i.is_trigger_relevant]
         return len(relevant_incidents) >= threshold
     
