@@ -1,20 +1,14 @@
 import 'package:dio/dio.dart';
+
 import '../../../shared/models/models.dart';
 
-/// API configuration
 class ApiConfig {
-  // For Android emulator use 10.0.2.2, for iOS simulator use localhost
-  // For physical device, use your machine's IP address
-  static const String baseUrl = 'http://10.0.2.2:8000';
-
-  // Alternative URLs for different environments
-  static const String localUrl = 'http://localhost:8000';
-  static const String emulatorUrl = 'http://10.0.2.2:8000';
-
+  static const String baseUrl = 'http://10.0.2.2:8000/api/v1';
+  static const String localUrl = 'http://localhost:8000/api/v1';
+  static const String emulatorUrl = 'http://10.0.2.2:8000/api/v1';
   static const Duration timeout = Duration(seconds: 30);
 }
 
-/// API response wrapper
 class ApiResponse<T> {
   final bool success;
   final T? data;
@@ -22,16 +16,12 @@ class ApiResponse<T> {
 
   ApiResponse({required this.success, this.data, this.error});
 
-  factory ApiResponse.success(T data) {
-    return ApiResponse(success: true, data: data);
-  }
+  factory ApiResponse.success(T data) => ApiResponse(success: true, data: data);
 
-  factory ApiResponse.failure(String error) {
-    return ApiResponse(success: false, error: error);
-  }
+  factory ApiResponse.failure(String error) =>
+      ApiResponse(success: false, error: error);
 }
 
-/// Main API service for connecting to FastAPI backend
 class ApiService {
   late final Dio _dio;
   final String baseUrl;
@@ -42,24 +32,14 @@ class ApiService {
         baseUrl: baseUrl,
         connectTimeout: ApiConfig.timeout,
         receiveTimeout: ApiConfig.timeout,
-        headers: {
+        headers: const {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
       ),
     );
-
-    // Add logging interceptor for debugging
-    _dio.interceptors.add(
-      LogInterceptor(
-        requestBody: true,
-        responseBody: true,
-        logPrint: (obj) => print('API: $obj'),
-      ),
-    );
   }
 
-  /// Generic GET request
   Future<ApiResponse<T>> get<T>(
     String endpoint,
     T Function(dynamic json) fromJson,
@@ -74,7 +54,6 @@ class ApiService {
     }
   }
 
-  /// Generic POST request
   Future<ApiResponse<T>> post<T>(
     String endpoint,
     Map<String, dynamic> body,
@@ -97,7 +76,8 @@ class ApiService {
       case DioExceptionType.receiveTimeout:
         return 'Server took too long to respond.';
       case DioExceptionType.badResponse:
-        return 'Server error: ${e.response?.statusCode}';
+        return e.response?.data['detail']?.toString() ??
+            'Server error: ${e.response?.statusCode}';
       case DioExceptionType.connectionError:
         return 'Cannot connect to server. Is the backend running?';
       default:
@@ -105,9 +85,6 @@ class ApiService {
     }
   }
 
-  // ==================== Rider APIs ====================
-
-  /// Register a new rider
   Future<ApiResponse<Rider>> registerRider({
     required String name,
     required String phone,
@@ -115,161 +92,139 @@ class ApiService {
     required String zoneId,
     String? email,
   }) async {
-    return post('/api/riders/', {
+    final normalizedPhone = phone.startsWith('+') ? phone : '+91$phone';
+    return post('/riders/', {
       'name': name,
-      'phone': phone,
+      'phone': normalizedPhone,
       'email': email,
       'persona': persona,
       'zone_id': zoneId,
-    }, (json) => Rider.fromJson(json));
+    }, (json) => Rider.fromJson(json as Map<String, dynamic>));
   }
 
-  /// Get rider by phone
-  Future<ApiResponse<Rider>> getRiderByPhone(String phone) async {
-    return get('/api/riders/phone/$phone', (json) => Rider.fromJson(json));
-  }
-
-  /// Get rider by ID
   Future<ApiResponse<Rider>> getRiderById(String riderId) async {
-    return get('/api/riders/$riderId', (json) => Rider.fromJson(json));
+    return get('/riders/$riderId', (json) => Rider.fromJson(json));
   }
 
-  /// Update rider location
-  Future<ApiResponse<Rider>> updateLocation(
-    String riderId,
-    double lat,
-    double lon,
-  ) async {
-    return post('/api/riders/$riderId/location', {
-      'latitude': lat,
-      'longitude': lon,
-    }, (json) => Rider.fromJson(json));
-  }
-
-  // ==================== Zone APIs ====================
-
-  /// Get all zones
   Future<ApiResponse<List<Zone>>> getZones() async {
     return get(
-      '/api/zones/',
-      (json) => (json as List).map((z) => Zone.fromJson(z)).toList(),
+      '/zones/',
+      (json) => (json as List)
+          .map((zone) => Zone.fromJson(zone as Map<String, dynamic>))
+          .toList(),
     );
   }
 
-  /// Get zone by ID
   Future<ApiResponse<Zone>> getZoneById(String zoneId) async {
-    return get('/api/zones/$zoneId', (json) => Zone.fromJson(json));
+    return get('/zones/$zoneId', (json) => Zone.fromJson(json));
   }
 
-  // ==================== Policy APIs ====================
-
-  /// Get policies for a rider
   Future<ApiResponse<List<Policy>>> getRiderPolicies(String riderId) async {
     return get(
-      '/api/policies/rider/$riderId',
-      (json) => (json as List).map((p) => Policy.fromJson(p)).toList(),
+      '/policies/?rider_id=$riderId',
+      (json) => (json as List)
+          .map((policy) => Policy.fromJson(policy as Map<String, dynamic>))
+          .toList(),
     );
   }
 
-  /// Get active policy for a rider
   Future<ApiResponse<Policy>> getActivePolicy(String riderId) async {
-    return get(
-      '/api/policies/rider/$riderId/active',
-      (json) => Policy.fromJson(json),
-    );
+    final response = await getRiderPolicies(riderId);
+    if (!response.success || response.data == null) {
+      return ApiResponse.failure(response.error ?? 'Failed to load policies');
+    }
+
+    final activePolicies =
+        response.data!.where((policy) => policy.isActive).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    if (activePolicies.isEmpty) {
+      return ApiResponse.failure('No active policy found');
+    }
+
+    return ApiResponse.success(activePolicies.first);
   }
 
-  /// Create a new policy
   Future<ApiResponse<Policy>> createPolicy({
     required String riderId,
     required String zoneId,
     required String persona,
   }) async {
-    return post('/api/policies/', {
+    return post('/policies/', {
       'rider_id': riderId,
       'zone_id': zoneId,
       'persona': persona,
-    }, (json) => Policy.fromJson(json));
+      'duration_days': 30,
+    }, (json) => Policy.fromJson(json as Map<String, dynamic>));
   }
 
-  // ==================== Claims APIs ====================
-
-  /// Get claims for a rider
   Future<ApiResponse<List<Claim>>> getRiderClaims(String riderId) async {
     return get(
-      '/api/claims/rider/$riderId',
-      (json) => (json as List).map((c) => Claim.fromJson(c)).toList(),
+      '/claims/?rider_id=$riderId',
+      (json) => (json as List)
+          .map((claim) => Claim.fromJson(claim as Map<String, dynamic>))
+          .toList(),
     );
   }
 
-  /// Get claims summary
   Future<ApiResponse<Map<String, dynamic>>> getClaimsSummary(
     String riderId,
   ) async {
-    return get(
-      '/api/claims/rider/$riderId/summary',
-      (json) => json as Map<String, dynamic>,
-    );
+    final response = await getRiderClaims(riderId);
+    if (!response.success || response.data == null) {
+      return ApiResponse.failure(response.error ?? 'Failed to load claims');
+    }
+
+    final claims = response.data!;
+    final paidClaims = claims.where((claim) => claim.isPaid).toList();
+    final approvedClaims = claims.where((claim) => claim.isApproved).toList();
+
+    return ApiResponse.success({
+      'total': claims.length,
+      'approved': approvedClaims.length,
+      'paid': paidClaims.length,
+      'amount': paidClaims.fold<double>(0, (sum, claim) => sum + claim.amount),
+    });
   }
 
-  // ==================== Weather & Triggers APIs ====================
-
-  /// Get current weather for a zone
   Future<ApiResponse<WeatherData>> getZoneWeather(String zoneId) async {
     return get(
-      '/api/weather/zone/$zoneId',
-      (json) => WeatherData.fromJson(json),
+      '/weather/current/$zoneId',
+      (json) => WeatherData.fromJson((json as Map<String, dynamic>)['weather']),
     );
   }
 
-  /// Get weather by coordinates
-  Future<ApiResponse<WeatherData>> getWeatherByCoords(
-    double lat,
-    double lon,
+  Future<ApiResponse<List<TriggerStatusModel>>> getZoneTriggers(
+    String zoneId,
   ) async {
     return get(
-      '/api/weather/current?lat=$lat&lon=$lon',
-      (json) => WeatherData.fromJson(json),
+      '/triggers/status/$zoneId',
+      (json) => (((json as Map<String, dynamic>)['triggers'] ?? []) as List)
+          .map(
+            (trigger) =>
+                TriggerStatusModel.fromJson(trigger as Map<String, dynamic>),
+          )
+          .toList(),
     );
   }
 
-  /// Get active triggers for a zone
-  Future<ApiResponse<List<TriggerEvent>>> getZoneTriggers(String zoneId) async {
-    return get(
-      '/api/triggers/zone/$zoneId',
-      (json) => (json as List).map((t) => TriggerEvent.fromJson(t)).toList(),
-    );
-  }
-
-  /// Get all active triggers
-  Future<ApiResponse<List<TriggerEvent>>> getActiveTriggers() async {
-    return get(
-      '/api/triggers/active',
-      (json) => (json as List).map((t) => TriggerEvent.fromJson(t)).toList(),
-    );
-  }
-
-  // ==================== Dashboard APIs ====================
-
-  /// Get dashboard stats
   Future<ApiResponse<DashboardStats>> getDashboardStats() async {
-    return get('/api/dashboard/stats', (json) => DashboardStats.fromJson(json));
+    return get('/dashboard/stats', (json) => DashboardStats.fromJson(json));
   }
 
-  /// Health check
   Future<bool> healthCheck() async {
     try {
-      final response = await _dio.get('/health');
+      final uri = Uri.parse(baseUrl.replaceFirst('/api/v1', '') + '/health');
+      final response = await _dio.getUri(uri);
       return response.statusCode == 200;
-    } catch (e) {
+    } catch (_) {
       return false;
     }
   }
 
   void dispose() {
-    _dio.close();
+    _dio.close(force: true);
   }
 }
 
-/// Singleton instance
 final apiService = ApiService();

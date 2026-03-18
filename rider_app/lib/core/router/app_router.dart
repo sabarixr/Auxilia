@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/splash/presentation/screens/splash_screen.dart';
@@ -9,6 +8,7 @@ import '../../features/onboarding/presentation/screens/zone_screen.dart';
 import '../../features/onboarding/presentation/screens/review_screen.dart';
 import '../../features/onboarding/presentation/screens/success_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
+import '../../features/home/presentation/screens/dashboard_screen.dart';
 import '../../features/claims/presentation/screens/claims_screen.dart';
 import '../../features/policy/presentation/screens/policy_screen.dart';
 import '../../features/profile/presentation/screens/profile_settings_screen.dart';
@@ -82,7 +82,7 @@ final GoRouter appRouter = GoRouter(
           path: AppRoutes.home,
           name: 'home',
           pageBuilder: (context, state) =>
-              const NoTransitionPage(child: DashboardTab()),
+              const NoTransitionPage(child: DashboardScreen()),
         ),
         GoRoute(
           path: AppRoutes.claims,
@@ -106,13 +106,3 @@ final GoRouter appRouter = GoRouter(
     ),
   ],
 );
-
-/// Dashboard tab placeholder - will be replaced with actual implementation
-class DashboardTab extends StatelessWidget {
-  const DashboardTab({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text('Dashboard'));
-  }
-}

@@ -272,65 +272,133 @@ class TriggerEvent {
   }
 }
 
+class TriggerStatusModel {
+  final String zoneId;
+  final String zoneName;
+  final String triggerType;
+  final double currentValue;
+  final double threshold;
+  final bool isActive;
+  final int affectedPolicies;
+  final DateTime lastUpdated;
+  final String source;
+
+  TriggerStatusModel({
+    required this.zoneId,
+    required this.zoneName,
+    required this.triggerType,
+    required this.currentValue,
+    required this.threshold,
+    required this.isActive,
+    required this.affectedPolicies,
+    required this.lastUpdated,
+    required this.source,
+  });
+
+  factory TriggerStatusModel.fromJson(Map<String, dynamic> json) {
+    return TriggerStatusModel(
+      zoneId: json['zone_id'] ?? '',
+      zoneName: json['zone_name'] ?? '',
+      triggerType: json['trigger_type'] ?? 'rain',
+      currentValue: (json['current_value'] ?? 0).toDouble(),
+      threshold: (json['threshold'] ?? 0).toDouble(),
+      isActive: json['is_active'] ?? false,
+      affectedPolicies: json['affected_policies'] ?? 0,
+      lastUpdated: json['last_updated'] != null
+          ? DateTime.parse(json['last_updated'])
+          : DateTime.now(),
+      source: json['source'] ?? '',
+    );
+  }
+
+  String get statusLabel => isActive ? 'TRIGGERED' : 'OK';
+}
+
 /// Weather data model
 class WeatherData {
+  final String zoneId;
   final double temperature;
+  final double feelsLike;
   final double humidity;
-  final double rainfall;
+  final double rainfallOneHour;
+  final double rainfallThreeHours;
   final double windSpeed;
   final String condition;
   final String description;
+  final DateTime timestamp;
 
   WeatherData({
+    required this.zoneId,
     required this.temperature,
+    required this.feelsLike,
     required this.humidity,
-    required this.rainfall,
+    required this.rainfallOneHour,
+    required this.rainfallThreeHours,
     required this.windSpeed,
     required this.condition,
     required this.description,
+    required this.timestamp,
   });
 
   factory WeatherData.fromJson(Map<String, dynamic> json) {
     return WeatherData(
+      zoneId: json['zone_id'] ?? '',
       temperature: (json['temperature'] ?? 0).toDouble(),
+      feelsLike: (json['feels_like'] ?? 0).toDouble(),
       humidity: (json['humidity'] ?? 0).toDouble(),
-      rainfall: (json['rainfall'] ?? 0).toDouble(),
+      rainfallOneHour: (json['rain_1h'] ?? 0).toDouble(),
+      rainfallThreeHours: (json['rain_3h'] ?? 0).toDouble(),
       windSpeed: (json['wind_speed'] ?? 0).toDouble(),
-      condition: json['condition'] ?? 'Clear',
-      description: json['description'] ?? '',
+      condition: json['weather_main'] ?? 'Clear',
+      description: json['weather_description'] ?? '',
+      timestamp: json['timestamp'] != null
+          ? DateTime.parse(json['timestamp'])
+          : DateTime.now(),
     );
   }
+
+  double get rainfall =>
+      rainfallOneHour > 0 ? rainfallOneHour : rainfallThreeHours;
 }
 
 /// Dashboard stats model
 class DashboardStats {
-  final int totalRiders;
+  final int totalPolicies;
   final int activePolicies;
   final int totalClaims;
-  final int paidClaims;
-  final double totalPremiums;
-  final double totalPayouts;
-  final int activeZones;
+  final int pendingClaims;
+  final double totalPremiumCollected;
+  final double totalClaimsPaid;
+  final int activeRiders;
+  final double avgRiskScore;
+  final int activeTriggers;
+  final double lossRatio;
 
   DashboardStats({
-    required this.totalRiders,
+    required this.totalPolicies,
     required this.activePolicies,
     required this.totalClaims,
-    required this.paidClaims,
-    required this.totalPremiums,
-    required this.totalPayouts,
-    required this.activeZones,
+    required this.pendingClaims,
+    required this.totalPremiumCollected,
+    required this.totalClaimsPaid,
+    required this.activeRiders,
+    required this.avgRiskScore,
+    required this.activeTriggers,
+    required this.lossRatio,
   });
 
   factory DashboardStats.fromJson(Map<String, dynamic> json) {
     return DashboardStats(
-      totalRiders: json['total_riders'] ?? 0,
+      totalPolicies: json['total_policies'] ?? 0,
       activePolicies: json['active_policies'] ?? 0,
       totalClaims: json['total_claims'] ?? 0,
-      paidClaims: json['paid_claims'] ?? 0,
-      totalPremiums: (json['total_premiums'] ?? 0).toDouble(),
-      totalPayouts: (json['total_payouts'] ?? 0).toDouble(),
-      activeZones: json['active_zones'] ?? 0,
+      pendingClaims: json['pending_claims'] ?? 0,
+      totalPremiumCollected: (json['total_premium_collected'] ?? 0).toDouble(),
+      totalClaimsPaid: (json['total_claims_paid'] ?? 0).toDouble(),
+      activeRiders: json['active_riders'] ?? 0,
+      avgRiskScore: (json['avg_risk_score'] ?? 0).toDouble(),
+      activeTriggers: json['active_triggers'] ?? 0,
+      lossRatio: (json['loss_ratio'] ?? 0).toDouble(),
     );
   }
 }
