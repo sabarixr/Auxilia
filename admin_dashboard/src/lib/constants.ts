@@ -4,6 +4,7 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://20.244.41
 // App Configuration
 export const APP_NAME = 'Auxilia Admin';
 export const APP_DESCRIPTION = 'AI-Powered Parametric Insurance Admin Dashboard';
+export const DEPLOYMENT_PIPELINE_VERSION = '2026-03-20-reinit';
 
 // Navigation Items
 export const NAV_ITEMS = [
