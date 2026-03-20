@@ -5,8 +5,8 @@ import { Search, Filter, Download, CloudRain, Car, TrendingUp, AlertTriangle, Ey
 import { approveClaim, getClaims, getClaimStats, rejectClaim, type ClaimListItem, type ClaimStatsResponse } from '@/lib/api';
 import { cn, formatCurrency, formatDateTime, getStatusBadgeClass } from '@/lib/utils';
 
-const iconMap = { rain: CloudRain, traffic: Car, surge: TrendingUp, accident: AlertTriangle };
-const iconColorMap = { rain: 'text-blue-600 bg-blue-100', traffic: 'text-orange-600 bg-orange-100', surge: 'text-purple-600 bg-purple-100', accident: 'text-red-600 bg-red-100' };
+const iconMap = { rain: CloudRain, traffic: Car, surge: TrendingUp, road_disruption: AlertTriangle };
+const iconColorMap = { rain: 'text-blue-600 bg-blue-100', traffic: 'text-orange-600 bg-orange-100', surge: 'text-purple-600 bg-purple-100', road_disruption: 'text-red-600 bg-red-100' };
 
 export default function ClaimsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
@@ -14,6 +14,7 @@ export default function ClaimsPage() {
   const [claims, setClaims] = useState<ClaimListItem[]>([]);
   const [stats, setStats] = useState<ClaimStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -119,7 +120,7 @@ export default function ClaimsPage() {
                     <td className="px-6 py-4"><div className="flex items-center gap-2"><div className="h-2 w-16 rounded-full bg-slate-200"><div className={cn('h-2 rounded-full', claim.fraud_score < 0.3 ? 'bg-green-500' : claim.fraud_score < 0.6 ? 'bg-yellow-500' : 'bg-red-500')} style={{ width: `${claim.fraud_score * 100}%` }} /></div><span className="text-xs text-slate-500">{(claim.fraud_score * 100).toFixed(0)}%</span></div></td>
                     <td className="px-6 py-4"><span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize', getStatusBadgeClass(claim.status))}>{claim.status}</span></td>
                     <td className="px-6 py-4"><span className="text-sm text-slate-500">{formatDateTime(claim.created_at)}</span></td>
-                    <td className="px-6 py-4"><div className="flex items-center gap-2"><button className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"><Eye className="h-4 w-4" /></button>{claim.status === 'pending' && <><button onClick={() => void handleApprove(claim.id)} className="rounded-lg p-2 text-green-500 transition-colors hover:bg-green-50"><CheckCircle className="h-4 w-4" /></button><button onClick={() => void handleReject(claim.id)} className="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50"><XCircle className="h-4 w-4" /></button></>}{claim.status === 'processing' && <button className="rounded-lg p-2 text-purple-500 transition-colors hover:bg-purple-50"><Clock className="h-4 w-4" /></button>}</div></td>
+                      <td className="px-6 py-4"><div className="flex items-center gap-2"><button onClick={() => setSelectedClaimId(claim.id)} className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"><Eye className="h-4 w-4" /></button>{claim.status === 'pending' && <><button onClick={() => void handleApprove(claim.id)} className="rounded-lg p-2 text-green-500 transition-colors hover:bg-green-50"><CheckCircle className="h-4 w-4" /></button><button onClick={() => void handleReject(claim.id)} className="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50"><XCircle className="h-4 w-4" /></button></>}{claim.status === 'processing' && <button className="rounded-lg p-2 text-purple-500 transition-colors hover:bg-purple-50"><Clock className="h-4 w-4" /></button>}</div></td>
                   </tr>
                 );
               })}
@@ -127,6 +128,35 @@ export default function ClaimsPage() {
           </table>
         </div>
       </div>
+
+      {selectedClaimId ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setSelectedClaimId(null)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900">Claim Details</h3>
+            {(() => {
+              const claim = claims.find((c) => c.id === selectedClaimId);
+              if (!claim) return <p className="mt-3 text-sm text-slate-500">Claim not found.</p>;
+              return (
+                <div className="mt-4 space-y-2 text-sm text-slate-700">
+                  <p><span className="font-medium text-slate-900">Claim ID:</span> {claim.id}</p>
+                  <p><span className="font-medium text-slate-900">Policy ID:</span> {claim.policy_id}</p>
+                  <p><span className="font-medium text-slate-900">Rider ID:</span> {claim.rider_id}</p>
+                  <p><span className="font-medium text-slate-900">Trigger:</span> {claim.trigger_type}</p>
+                  <p><span className="font-medium text-slate-900">Amount:</span> {formatCurrency(claim.amount)}</p>
+                  <p><span className="font-medium text-slate-900">Fraud score:</span> {(claim.fraud_score * 100).toFixed(0)}%</p>
+                  <p><span className="font-medium text-slate-900">Status:</span> {claim.status}</p>
+                  <p><span className="font-medium text-slate-900">Created:</span> {formatDateTime(claim.created_at)}</p>
+                </div>
+              );
+            })()}
+            <div className="mt-6 flex justify-end">
+              <button onClick={() => setSelectedClaimId(null)} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

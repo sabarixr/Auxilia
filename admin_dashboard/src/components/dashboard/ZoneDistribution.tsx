@@ -27,29 +27,35 @@ export function ZoneDistribution({ data }: { data: ZoneDatum[] }) {
         <p className="text-sm text-slate-500">Active policies by zone</p>
       </div>
 
-      <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie data={data} cx="50%" cy="50%" innerRadius={60} outerRadius={90} fill="#8884d8" paddingAngle={3} dataKey="value">
-              {data.map((entry, index) => (
-                <Cell key={`cell-${entry.name}`} fill={COLORS[index % COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#FFF',
-                border: '1px solid #E2E8F0',
-                borderRadius: '12px',
-                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-              }}
-              formatter={(value) => [`${value} policies`, 'Count']}
-            />
-            <Legend layout="horizontal" verticalAlign="bottom" align="center" iconType="circle" iconSize={8} formatter={(value) => <span className="text-sm text-slate-600">{value}</span>} />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
+      {data.length > 0 ? (
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={data} cx="50%" cy="50%" innerRadius={60} outerRadius={90} fill="#8884d8" paddingAngle={3} dataKey="value">
+                {data.map((entry, index) => (
+                  <Cell key={`cell-${entry.name}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#FFF',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                }}
+                formatter={(value) => [`${value} policies`, 'Count']}
+              />
+              <Legend layout="horizontal" verticalAlign="bottom" align="center" iconType="circle" iconSize={8} formatter={(value) => <span className="text-sm text-slate-600">{value}</span>} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/80">
+          <p className="text-sm text-slate-500">No active zone distribution data yet.</p>
+        </div>
+      )}
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
         <div className="rounded-lg bg-red-50 p-3 text-center">
           <p className="text-lg font-bold text-red-600">{totals.high ?? 0}</p>
           <p className="text-xs text-red-600">High Risk</p>

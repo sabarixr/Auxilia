@@ -17,14 +17,14 @@ const iconMap = {
   rain: CloudRain,
   traffic: Car,
   surge: TrendingUp,
-  accident: AlertTriangle,
+  road_disruption: AlertTriangle,
 };
 
 const iconColorMap = {
   rain: 'text-blue-600 bg-blue-100',
   traffic: 'text-orange-600 bg-orange-100',
   surge: 'text-purple-600 bg-purple-100',
-  accident: 'text-red-600 bg-red-100',
+  road_disruption: 'text-red-600 bg-red-100',
 };
 
 export function RecentClaims({ claims }: { claims: RecentClaim[] }) {

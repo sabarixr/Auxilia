@@ -183,10 +183,10 @@ async def seed_policies(session: AsyncSession, riders: list, zones: list) -> lis
     """Seed insurance policies"""
     policies = []
     
-    # Premium and coverage by persona
+    # Premium and coverage by persona (weekly pricing)
     policy_config = {
-        PersonaType.QCOMMERCE: {"premium": 149, "coverage": 10000},
-        PersonaType.FOOD_DELIVERY: {"premium": 99, "coverage": 7500},
+        PersonaType.QCOMMERCE: {"premium": 99, "coverage": 5000},     # Rs 99/week
+        PersonaType.FOOD_DELIVERY: {"premium": 79, "coverage": 4000}, # Rs 79/week
     }
     
     # 70% of riders have policies
@@ -207,7 +207,7 @@ async def seed_policies(session: AsyncSession, riders: list, zones: list) -> lis
             premium=round(premium, 2),
             coverage=config["coverage"],
             start_date=start_date,
-            end_date=start_date + timedelta(days=30),
+            end_date=start_date + timedelta(days=7),  # Weekly policy
             status=PolicyStatus.ACTIVE,
             tx_hash=f"0x{uuid.uuid4().hex}" if random.random() > 0.3 else None,
             created_at=start_date
@@ -228,14 +228,14 @@ async def seed_trigger_events(session: AsyncSession, zones: list) -> list:
         TriggerType.RAIN: 50.0,
         TriggerType.TRAFFIC: 60.0,
         TriggerType.SURGE: 2.5,
-        TriggerType.ACCIDENT: 3.0
+        TriggerType.ROAD_DISRUPTION: 3.0
     }
     
     sources = {
         TriggerType.RAIN: "OpenWeatherMap",
         TriggerType.TRAFFIC: "TomTom",
         TriggerType.SURGE: "Internal",
-        TriggerType.ACCIDENT: "NewsAPI+Gemini"
+        TriggerType.ROAD_DISRUPTION: "NewsAPI+Gemini"
     }
     
     # Create 150 trigger events over the last 7 days
@@ -286,7 +286,7 @@ async def seed_claims(session: AsyncSession, policies: list, riders: list, trigg
         TriggerType.RAIN: 150,
         TriggerType.TRAFFIC: 100,
         TriggerType.SURGE: 200,
-        TriggerType.ACCIDENT: 500
+        TriggerType.ROAD_DISRUPTION: 500
     }
     
     # Filter active trigger events

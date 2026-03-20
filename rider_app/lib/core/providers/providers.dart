@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
 import '../services/api_service.dart';
 import '../../shared/models/models.dart';
 
@@ -230,4 +231,39 @@ final onboardingProvider =
 final backendConnectedProvider = FutureProvider<bool>((ref) async {
   final api = ref.watch(apiServiceProvider);
   return await api.healthCheck();
+});
+
+final locationTrackingProvider = StreamProvider<Position>((ref) async* {
+  final enabled = await Geolocator.isLocationServiceEnabled();
+  if (!enabled) return;
+
+  var permission = await Geolocator.checkPermission();
+  if (permission == LocationPermission.denied) {
+    permission = await Geolocator.requestPermission();
+  }
+  if (permission == LocationPermission.deniedForever ||
+      permission == LocationPermission.denied) {
+    return;
+  }
+
+  yield* Geolocator.getPositionStream(
+    locationSettings: const LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 100,
+    ),
+  );
+});
+
+final architectureProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final api = ref.watch(apiServiceProvider);
+  final response = await api.getArchitecture();
+  if (response.success && response.data != null) return response.data!;
+  return {'architecture': {}, 'pipeline': []};
+});
+
+final zoneHeatmapProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final api = ref.watch(apiServiceProvider);
+  final response = await api.getZoneHeatmap();
+  if (response.success && response.data != null) return response.data!;
+  return {'points': [], 'count': 0};
 });

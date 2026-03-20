@@ -28,7 +28,7 @@ class TriggerType(str, Enum):
     RAIN = "rain"
     TRAFFIC = "traffic"
     SURGE = "surge"
-    ACCIDENT = "accident"
+    ROAD_DISRUPTION = "road_disruption"  # Renamed from 'accident' - covers road incidents affecting income
 
 
 class RiderStatus(str, Enum):
@@ -75,6 +75,29 @@ class RiderResponse(BaseModel):
         from_attributes = True
 
 
+class DeliveryCheckInRequest(BaseModel):
+    order_id: Optional[str] = None
+    delivery_latitude: float
+    delivery_longitude: float
+    rider_latitude: Optional[float] = None
+    rider_longitude: Optional[float] = None
+
+
+class DeliveryCheckInResponse(BaseModel):
+    rider_id: str
+    order_id: Optional[str] = None
+    assigned_zone_id: Optional[str] = None
+    assigned_zone_name: Optional[str] = None
+    distance_to_zone_center_meters: Optional[float] = None
+    is_delivery_in_coverage_zone: bool
+    eligibility_reason: str
+    computed_risk_score: float
+    weather_risk: float
+    traffic_risk: float
+    incident_risk: float
+    assessed_at: datetime
+
+
 # Zone Schemas
 class ZoneCreate(BaseModel):
     id: str
@@ -87,6 +110,18 @@ class ZoneCreate(BaseModel):
     radius_km: float = 5.0
     risk_level: str = "medium"
     base_premium_factor: float = 1.0
+
+
+class InsurerZoneCreate(BaseModel):
+    insurer_id: Optional[str] = None
+    name: str
+    city: str
+    state: Optional[str] = None
+    country: str = "IN"
+    latitude: float
+    longitude: float
+    radius_km: float = 3.0
+    risk_level: str = "medium"
 
 
 class ZoneResponse(BaseModel):
@@ -113,7 +148,7 @@ class PolicyCreate(BaseModel):
     rider_id: str
     zone_id: str
     persona: PersonaType
-    duration_days: int = Field(default=30, ge=1, le=365)
+    duration_days: int = Field(default=7, ge=1, le=52)  # Weekly model: default 7 days, max ~1 year in weeks
 
 
 class PolicyResponse(BaseModel):
@@ -371,6 +406,20 @@ class DashboardStats(BaseModel):
     avg_risk_score: float
     active_triggers: int
     loss_ratio: float
+
+
+class ZoneHeatPoint(BaseModel):
+    zone_id: str
+    zone_name: str
+    city: str
+    latitude: float
+    longitude: float
+    radius_km: float
+    active_riders: int
+    active_policies: int
+    open_claims: int
+    avg_risk_score: float
+    heat_score: float
 
 
 # Analytics

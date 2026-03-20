@@ -168,9 +168,9 @@ class TriggerAgent:
             return None
     
     async def _check_incidents(self, zone_id: str, city: str) -> Optional[TriggerStatus]:
-        """Check for accidents/incidents using NewsAPI."""
+        """Check for road disruptions/incidents using NewsAPI."""
         try:
-            incidents = await news_service.search_incidents(city, "accident", hours_back=6)
+            incidents = await news_service.search_incidents(city, "road disruption", hours_back=6)
             
             threshold = settings.INCIDENT_THRESHOLD
             relevant_count = len([i for i in incidents if i.is_trigger_relevant])
@@ -179,7 +179,7 @@ class TriggerAgent:
             return TriggerStatus(
                 zone_id=zone_id,
                 zone_name=ZONE_CONFIG[zone_id]["name"],
-                trigger_type=TriggerType.ACCIDENT,
+                trigger_type=TriggerType.ROAD_DISRUPTION,
                 current_value=float(relevant_count),
                 threshold=float(threshold),
                 is_active=is_active,

@@ -106,6 +106,23 @@ class ApiService {
     return get('/riders/$riderId', (json) => Rider.fromJson(json));
   }
 
+  Future<ApiResponse<Map<String, dynamic>>> deliveryCheckIn({
+    required String riderId,
+    required double deliveryLat,
+    required double deliveryLon,
+    String? orderId,
+    double? riderLat,
+    double? riderLon,
+  }) async {
+    return post('/riders/$riderId/delivery-checkin', {
+      'order_id': orderId,
+      'delivery_latitude': deliveryLat,
+      'delivery_longitude': deliveryLon,
+      'rider_latitude': riderLat,
+      'rider_longitude': riderLon,
+    }, (json) => json as Map<String, dynamic>);
+  }
+
   Future<ApiResponse<List<Zone>>> getZones() async {
     return get(
       '/zones/',
@@ -154,7 +171,7 @@ class ApiService {
       'rider_id': riderId,
       'zone_id': zoneId,
       'persona': persona,
-      'duration_days': 30,
+      'duration_days': 7,
     }, (json) => Policy.fromJson(json as Map<String, dynamic>));
   }
 
@@ -210,6 +227,23 @@ class ApiService {
 
   Future<ApiResponse<DashboardStats>> getDashboardStats() async {
     return get('/dashboard/stats', (json) => DashboardStats.fromJson(json));
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> getArchitecture() async {
+    return get(
+      '/dashboard/architecture',
+      (json) => json as Map<String, dynamic>,
+    );
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> getZoneHeatmap({
+    String? city,
+  }) async {
+    final query = city == null ? '' : '?city=$city';
+    return get(
+      '/dashboard/zone-heatmap$query',
+      (json) => json as Map<String, dynamic>,
+    );
   }
 
   Future<bool> healthCheck() async {

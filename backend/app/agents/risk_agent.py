@@ -30,6 +30,22 @@ ZONE_BASE_RISK = {
     "HYD-HIB": 0.40,  # HITEC City - planned roads
     "PUN-KOT": 0.35,  # Koregaon Park - relatively safe
     "CHN-ANN": 0.50,  # Anna Nagar - moderate risk
+    # Mumbai seed zones
+    "andheri-east": 0.66,
+    "andheri-west": 0.62,
+    "bandra-east": 0.58,
+    "bandra-west": 0.55,
+    "kurla": 0.70,
+    "dadar": 0.67,
+    "lower-parel": 0.60,
+    "powai": 0.52,
+    "malad-west": 0.54,
+    "goregaon-east": 0.56,
+    "borivali-west": 0.46,
+    "thane-west": 0.50,
+    "vashi": 0.43,
+    "churchgate": 0.64,
+    "colaba": 0.52,
 }
 
 # Persona risk adjustments
@@ -91,8 +107,8 @@ class RiskAgent:
         rider_id: str,
         zone_id: str,
         persona: PersonaType,
-        lat: float = None,
-        lon: float = None,
+        lat: Optional[float] = None,
+        lon: Optional[float] = None,
         claim_history: List[Dict] = None
     ) -> RiskAssessment:
         """
@@ -104,10 +120,13 @@ class RiskAgent:
         # Get base zone risk
         base_risk = ZONE_BASE_RISK.get(zone_id, 0.5)
         
+        async def _zero() -> float:
+            return 0.0
+
         # Get real-time risk factors in parallel
         weather_risk, traffic_risk, incident_risk = await asyncio.gather(
-            self._get_weather_risk(lat, lon) if lat and lon else asyncio.coroutine(lambda: 0.0)(),
-            self._get_traffic_risk(lat, lon) if lat and lon else asyncio.coroutine(lambda: 0.0)(),
+            self._get_weather_risk(lat, lon) if lat and lon else _zero(),
+            self._get_traffic_risk(lat, lon) if lat and lon else _zero(),
             self._get_incident_risk(zone_id),
             return_exceptions=True
         )
@@ -167,6 +186,68 @@ class RiskAgent:
         self._risk_cache[f"{rider_id}:{zone_id}"] = assessment
         
         return assessment
+
+    async def assess_delivery_risk(
+        self,
+        rider_id: str,
+        zone_id: str,
+        persona: PersonaType,
+        delivery_lat: float,
+        delivery_lon: float,
+        city: str,
+        state: str,
+        country: str,
+        claim_history: List[Dict] = None,
+    ) -> RiskAssessment:
+        """
+        Delivery-specific risk that blends local zone and macro regional conditions.
+        Used when rider submits delivery coordinates for insurance validity.
+        """
+        base_assessment = await self.assess_rider_risk(
+            rider_id=rider_id,
+            zone_id=zone_id,
+            persona=persona,
+            lat=delivery_lat,
+            lon=delivery_lon,
+            claim_history=claim_history or [],
+        )
+
+        macro = await news_service.get_macro_incident_score(
+            country=country or "India",
+            state=state or "",
+            city=city or "",
+            hours_back=24,
+        )
+
+        macro_risk = float(macro.get("score", 0.0))
+        delivery_weighted = min(
+            1.0,
+            base_assessment.final_risk_score * 0.8 + macro_risk * 0.2,
+        )
+
+        factors = list(base_assessment.risk_factors)
+        if macro_risk >= 0.4:
+            factors.append("Regional disruption pressure")
+
+        recommendations = list(base_assessment.recommendations)
+        if macro_risk >= 0.5:
+            recommendations.append(
+                "Macro disruption signals are elevated. Avoid high-pressure corridors."
+            )
+
+        return RiskAssessment(
+            rider_id=base_assessment.rider_id,
+            zone_id=base_assessment.zone_id,
+            base_risk_score=base_assessment.base_risk_score,
+            weather_risk=base_assessment.weather_risk,
+            traffic_risk=base_assessment.traffic_risk,
+            incident_risk=max(base_assessment.incident_risk, round(macro_risk, 3)),
+            historical_risk=base_assessment.historical_risk,
+            final_risk_score=round(delivery_weighted, 3),
+            risk_factors=factors,
+            recommendations=recommendations,
+            assessed_at=datetime.utcnow(),
+        )
     
     async def assess_zone_risk(self, zone_id: str) -> Dict:
         """

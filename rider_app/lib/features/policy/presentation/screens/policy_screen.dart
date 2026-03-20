@@ -63,7 +63,7 @@ class PolicyScreen extends ConsumerWidget {
                             _buildDivider(),
                             _buildDetailRow(
                               'Premium',
-                              'Rs ${policy.premium.toStringAsFixed(0)} / month',
+                              'Rs ${policy.premium.toStringAsFixed(0)} / week',
                             ),
                             _buildDivider(),
                             _buildDetailRow(
@@ -192,7 +192,7 @@ class _PolicyHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = (policy.daysRemaining.clamp(0, 30) / 30);
+    final progress = (policy.daysRemaining.clamp(0, 7) / 7);
 
     return Container(
       width: double.infinity,

@@ -7,23 +7,25 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
-import { StatCard, ClaimsChart, LiveTriggers, RecentClaims, ZoneDistribution } from '@/components/dashboard';
+import { StatCard, ClaimsChart, LiveTriggers, RecentClaims, ZoneDistribution, ZoneHeatmap, ZoneMap } from '@/components/dashboard';
 import {
   getClaimsChart,
   getDashboardStats,
   getLiveTriggers,
   getRecentClaims,
+  getZoneHeatmap,
   getZoneStats,
 } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 
 export default async function DashboardPage() {
-  const [stats, claimsChart, recentClaims, liveTriggers, zoneStats] = await Promise.all([
+  const [stats, claimsChart, recentClaims, liveTriggers, zoneStats, zoneHeatmap] = await Promise.all([
     getDashboardStats(),
     getClaimsChart(),
     getRecentClaims(8),
     getLiveTriggers(),
     getZoneStats(),
+    getZoneHeatmap(),
   ]);
 
   const chartData = claimsChart.data.map((item) => ({
@@ -34,7 +36,7 @@ export default async function DashboardPage() {
   }));
 
   const zoneData = zoneStats.zones
-    .filter((zone) => zone.active_policies > 0)
+    .filter((zone) => zone.active_policies > 0 || zone.total_claims > 0 || zone.total_payouts > 0)
     .map((zone) => ({
       name: zone.name,
       value: zone.active_policies,
@@ -71,6 +73,9 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      <ZoneHeatmap points={zoneHeatmap.points} />
+      <ZoneMap points={zoneHeatmap.points} />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <RecentClaims
@@ -92,7 +97,7 @@ export default async function DashboardPage() {
               type: trigger.trigger_type,
               current: trigger.current_value,
               threshold: trigger.threshold,
-              isActive: true,
+              isActive: trigger.current_value >= trigger.threshold,
             }))}
           />
         </div>

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../../../core/providers/providers.dart';
 import '../../../../core/theme/theme.dart';
@@ -15,6 +16,9 @@ class DashboardScreen extends ConsumerWidget {
     final policyAsync = ref.watch(activePolicyProvider);
     final claimsSummaryAsync = ref.watch(claimsSummaryProvider);
     final triggersAsync = ref.watch(triggersProvider);
+    final locationAsync = ref.watch(locationTrackingProvider);
+    final heatmapAsync = ref.watch(zoneHeatmapProvider);
+    final architectureAsync = ref.watch(architectureProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -65,6 +69,10 @@ class DashboardScreen extends ConsumerWidget {
                   .animate()
                   .fadeIn(),
               const SizedBox(height: 24),
+              _LocationStatusCard(locationAsync: locationAsync),
+              const SizedBox(height: 16),
+              _DeliveryCheckInCard(),
+              const SizedBox(height: 24),
               policyAsync.when(
                 data: (policy) =>
                     _ShieldCard(daysLeft: policy?.daysRemaining ?? 0),
@@ -72,6 +80,15 @@ class DashboardScreen extends ConsumerWidget {
                 error: (_, _) => const _EmptyCard(
                   title: 'No active policy yet',
                   subtitle: 'Finish onboarding to activate your coverage.',
+                ),
+              ),
+              const SizedBox(height: 24),
+              heatmapAsync.when(
+                data: (heatmap) => _HeatmapCard(data: heatmap),
+                loading: () => const _CardSkeleton(height: 180),
+                error: (_, _) => const _EmptyCard(
+                  title: 'Heatmap unavailable',
+                  subtitle: 'Start backend to render dynamic zone heat.',
                 ),
               ),
               const SizedBox(height: 24),
@@ -148,10 +165,301 @@ class DashboardScreen extends ConsumerWidget {
                   subtitle: 'Start the backend to load live monitoring data.',
                 ),
               ),
+              const SizedBox(height: 24),
+              architectureAsync.when(
+                data: (arch) => _FlowCard(data: arch),
+                loading: () => const _CardSkeleton(height: 160),
+                error: (_, _) => const SizedBox.shrink(),
+              ),
               const SizedBox(height: 100),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _LocationStatusCard extends StatelessWidget {
+  final AsyncValue<Position> locationAsync;
+
+  const _LocationStatusCard({required this.locationAsync});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: locationAsync.when(
+        data: (position) => Row(
+          children: [
+            const Icon(Icons.my_location_rounded, color: AppColors.success),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Tracking active: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}',
+                style: AppTypography.bodySmall,
+              ),
+            ),
+          ],
+        ),
+        loading: () => Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Requesting location permission...',
+              style: AppTypography.bodySmall,
+            ),
+          ],
+        ),
+        error: (_, _) => Row(
+          children: [
+            const Icon(Icons.location_off_rounded, color: AppColors.warning),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Location tracking disabled. Enable GPS for delivery-zone insurance checks.',
+                style: AppTypography.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DeliveryCheckInCard extends ConsumerStatefulWidget {
+  const _DeliveryCheckInCard();
+
+  @override
+  ConsumerState<_DeliveryCheckInCard> createState() =>
+      _DeliveryCheckInCardState();
+}
+
+class _DeliveryCheckInCardState extends ConsumerState<_DeliveryCheckInCard> {
+  final _orderController = TextEditingController();
+  final _latController = TextEditingController();
+  final _lonController = TextEditingController();
+  String _result = '';
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _orderController.dispose();
+    _latController.dispose();
+    _lonController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() => _loading = true);
+    final rider = await ref.read(currentRiderProvider.future);
+    if (rider == null) {
+      setState(() {
+        _loading = false;
+        _result = 'No rider session found';
+      });
+      return;
+    }
+
+    final api = ref.read(apiServiceProvider);
+    Position? location;
+    try {
+      location = await ref.read(locationTrackingProvider.future);
+    } catch (_) {
+      location = null;
+    }
+
+    final response = await api.deliveryCheckIn(
+      riderId: rider.id,
+      orderId: _orderController.text.trim().isEmpty
+          ? null
+          : _orderController.text.trim(),
+      deliveryLat: double.tryParse(_latController.text.trim()) ?? 0,
+      deliveryLon: double.tryParse(_lonController.text.trim()) ?? 0,
+      riderLat: location == null ? null : location.latitude,
+      riderLon: location == null ? null : location.longitude,
+    );
+
+    setState(() {
+      _loading = false;
+      _result = response.success
+          ? 'Zone: ${response.data?['assigned_zone_name']} | Eligible: ${response.data?['is_delivery_in_coverage_zone']} | Risk: ${response.data?['computed_risk_score']}'
+          : (response.error ?? 'Check-in failed');
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Delivery Check-in (Insurance Validation)',
+            style: AppTypography.titleSmall,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _orderController,
+            decoration: const InputDecoration(labelText: 'Order ID (optional)'),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _latController,
+                  decoration: const InputDecoration(
+                    labelText: 'Delivery Latitude',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _lonController,
+                  decoration: const InputDecoration(
+                    labelText: 'Delivery Longitude',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _loading ? null : _submit,
+              child: Text(_loading ? 'Checking...' : 'Validate Delivery Zone'),
+            ),
+          ),
+          if (_result.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              _result,
+              style: AppTypography.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HeatmapCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+
+  const _HeatmapCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final points = (data['points'] as List<dynamic>? ?? []);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Zone Heatmap Snapshot', style: AppTypography.titleSmall),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: points.take(8).map((point) {
+              final score = (point['heat_score'] as num?)?.toDouble() ?? 0.0;
+              final color = score >= 0.75
+                  ? AppColors.danger
+                  : score >= 0.5
+                  ? AppColors.warning
+                  : score >= 0.25
+                  ? AppColors.success
+                  : AppColors.primary;
+              return Container(
+                width: 150,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: color.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${point['zone_name']}',
+                      style: AppTypography.labelMedium,
+                    ),
+                    Text(
+                      'Heat ${(score * 100).toStringAsFixed(0)}%',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FlowCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+
+  const _FlowCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final pipeline = (data['pipeline'] as List<dynamic>? ?? []).cast<String>();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Project Flow', style: AppTypography.titleSmall),
+          const SizedBox(height: 8),
+          ...pipeline
+              .take(6)
+              .map(
+                (step) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text('-> $step', style: AppTypography.bodySmall),
+                ),
+              ),
+        ],
       ),
     );
   }

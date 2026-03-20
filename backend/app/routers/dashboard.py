@@ -11,8 +11,12 @@ from typing import Optional
 from app.core.database import get_db
 from app.models.database import Rider, Policy, Claim, Zone, TriggerEvent
 from app.models.schemas import (
-    DashboardStats, ClaimStatus, PolicyStatus, 
-    TriggerType, RiderStatus
+    DashboardStats,
+    ClaimStatus,
+    PolicyStatus,
+    TriggerType,
+    RiderStatus,
+    ZoneHeatPoint,
 )
 from app.agents.trigger_agent import trigger_agent, ZONE_CONFIG
 
@@ -356,3 +360,109 @@ async def get_system_alerts(
         })
     
     return {"alerts": alerts, "count": len(alerts)}
+
+
+@router.get("/zone-heatmap")
+async def get_zone_heatmap(
+    city: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Aggregated zone heat map data optimized for high rider counts.
+    Heat score blends riders, policies, open claims, and risk score.
+    """
+    query = select(Zone)
+    if city:
+        query = query.where(Zone.city == city)
+
+    zones_result = await db.execute(query)
+    zones = zones_result.scalars().all()
+
+    heat_points: list[ZoneHeatPoint] = []
+    for zone in zones:
+        active_riders_q = await db.execute(
+            select(func.count(Rider.id)).where(
+                Rider.zone_id == zone.id,
+                Rider.status == RiderStatus.ACTIVE.value,
+            )
+        )
+        active_policies_q = await db.execute(
+            select(func.count(Policy.id)).where(
+                Policy.zone_id == zone.id,
+                Policy.status == PolicyStatus.ACTIVE.value,
+            )
+        )
+        open_claims_q = await db.execute(
+            select(func.count(Claim.id)).where(
+                Claim.policy_id.in_(
+                    select(Policy.id).where(Policy.zone_id == zone.id)
+                ),
+                Claim.status.in_([
+                    ClaimStatus.PENDING.value,
+                    ClaimStatus.PROCESSING.value,
+                ])
+            )
+        )
+        avg_risk_q = await db.execute(
+            select(func.avg(Rider.risk_score)).where(Rider.zone_id == zone.id)
+        )
+
+        active_riders = active_riders_q.scalar() or 0
+        active_policies = active_policies_q.scalar() or 0
+        open_claims = open_claims_q.scalar() or 0
+        avg_risk = float(avg_risk_q.scalar() or 0.0)
+
+        density_component = min(1.0, (active_riders + active_policies) / 120.0)
+        claim_component = min(1.0, open_claims / 20.0)
+        risk_component = min(1.0, avg_risk)
+        heat_score = round(
+            density_component * 0.45 + claim_component * 0.2 + risk_component * 0.35,
+            3,
+        )
+
+        heat_points.append(
+            ZoneHeatPoint(
+                zone_id=zone.id,
+                zone_name=zone.name,
+                city=zone.city,
+                latitude=zone.latitude,
+                longitude=zone.longitude,
+                radius_km=zone.radius_km,
+                active_riders=active_riders,
+                active_policies=active_policies,
+                open_claims=open_claims,
+                avg_risk_score=round(avg_risk, 3),
+                heat_score=heat_score,
+            )
+        )
+
+    return {
+        "city": city,
+        "points": [point.model_dump() for point in heat_points],
+        "count": len(heat_points),
+        "generated_at": datetime.utcnow().isoformat(),
+    }
+
+
+@router.get("/architecture")
+async def get_architecture_and_pipeline():
+    """Architecture + project flow used by admin for documentation view."""
+    return {
+        "architecture": {
+            "frontend": ["Flutter Rider App", "Next.js Admin Dashboard"],
+            "backend": ["FastAPI", "Async SQLAlchemy", "Agent Orchestrator"],
+            "data": ["SQLite/PostgreSQL", "Tamper-evident claim log", "Policy/claim state"],
+            "integrations": ["OpenWeatherMap", "TomTom", "NewsAPI + Gemini", "OpenStreetMap/Nominatim"],
+            "blockchain": ["Claim ledger contract", "Tx hash evidence"],
+        },
+        "pipeline": [
+            "Rider starts shift and location stream begins",
+            "Rider enters delivery location coordinates for order check-in",
+            "Backend maps delivery coordinates to nearest insurer-defined zone",
+            "RiskAgent computes dynamic score (weather + traffic + zone/state/country incident pressure)",
+            "TriggerAgent evaluates parametric conditions",
+            "FraudAgent verifies delivery-zone eligibility and claim consistency",
+            "PayoutAgent decides payout; approved claims get ledger hash",
+            "Admin dashboard shows live zone heat map + metrics",
+        ],
+    }

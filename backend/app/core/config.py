@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     SURGE_THRESHOLD_MULTIPLIER: float = 2.5
     ACCIDENT_THRESHOLD_COUNT: int = 3
     TRIGGER_POLL_INTERVAL: int = 300
+    LOCATION_TRACK_INTERVAL_SECONDS: int = 180
+    DELIVERY_ZONE_MAX_RADIUS_KM: float = 5.0
 
     # Backward-compatible aliases used across routers/agents
     CONGESTION_THRESHOLD: float = 60.0

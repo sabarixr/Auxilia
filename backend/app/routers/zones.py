@@ -11,9 +11,10 @@ import uuid
 
 from app.core.database import get_db
 from app.models.database import Zone, Policy, Claim
-from app.models.schemas import ZoneCreate, ZoneResponse, ZoneWithTriggers, PolicyStatus
+from app.models.schemas import ZoneCreate, ZoneResponse, ZoneWithTriggers, PolicyStatus, InsurerZoneCreate
 from app.agents.trigger_agent import trigger_agent, ZONE_CONFIG
 from app.agents.risk_agent import risk_agent
+from app.services.location_service import location_service
 
 router = APIRouter(prefix="/zones", tags=["Zones"])
 
@@ -50,6 +51,50 @@ async def create_zone(
     await db.commit()
     await db.refresh(db_zone)
     
+    return db_zone
+
+
+@router.post("/dynamic", response_model=ZoneResponse)
+async def create_dynamic_insurer_zone(
+    payload: InsurerZoneCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create a dynamic insurer-defined zone from map coordinates.
+    Reverse-geocodes location with OSM/Nominatim and stores a normalized zone.
+    """
+    reverse = await location_service.reverse_geocode(payload.latitude, payload.longitude)
+
+    zone_name = payload.name.strip()
+    zone_city = payload.city or (reverse.city if reverse else "")
+    zone_state = payload.state or (reverse.state if reverse else "")
+    zone_country = payload.country or (reverse.country if reverse else "IN")
+
+    normalized = f"{zone_city}-{zone_name}-{str(payload.latitude)[:6]}-{str(payload.longitude)[:6]}"
+    zone_id = normalized.lower().replace(" ", "-").replace("/", "-")
+
+    existing = await db.execute(select(Zone).where(Zone.id == zone_id))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Dynamic zone already exists")
+
+    db_zone = Zone(
+        id=zone_id,
+        name=zone_name,
+        city=zone_city,
+        state=zone_state,
+        country=zone_country,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        radius_km=payload.radius_km,
+        risk_level=payload.risk_level,
+        base_premium_factor=1.0,
+        is_active=True,
+        created_at=datetime.utcnow(),
+    )
+
+    db.add(db_zone)
+    await db.commit()
+    await db.refresh(db_zone)
     return db_zone
 
 

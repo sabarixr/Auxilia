@@ -12,10 +12,14 @@ import uuid
 from app.core.database import get_db
 from app.models.database import Rider, Policy, Claim
 from app.models.schemas import (
-    RiderCreate, RiderUpdate, RiderResponse, 
-    PersonaType, RiderStatus, APIResponse
+    RiderCreate, RiderUpdate, RiderResponse,
+    PersonaType, RiderStatus, APIResponse,
+    DeliveryCheckInRequest, DeliveryCheckInResponse,
 )
 from app.agents.risk_agent import risk_agent
+from app.services.location_service import location_service
+from app.models.database import Zone
+from app.core.config import settings
 
 router = APIRouter(prefix="/riders", tags=["Riders"])
 
@@ -38,8 +42,8 @@ async def create_rider(
         rider_id="new",
         zone_id=rider.zone_id,
         persona=rider.persona,
-        lat=rider.latitude,
-        lon=rider.longitude,
+        lat=rider.latitude if rider.latitude is not None else None,
+        lon=rider.longitude if rider.longitude is not None else None,
         claim_history=[]
     )
     
@@ -244,6 +248,158 @@ async def update_rider_location(
     await db.commit()
     
     return {"success": True, "message": "Location updated"}
+
+
+@router.post("/{rider_id}/delivery-checkin", response_model=DeliveryCheckInResponse)
+async def delivery_checkin(
+    rider_id: str,
+    payload: DeliveryCheckInRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Rider submits delivery coordinates for insurance validity.
+    Risk and eligibility are calculated against delivery location (not home/base rider zone).
+    """
+    result = await db.execute(select(Rider).where(Rider.id == rider_id))
+    rider = result.scalar_one_or_none()
+    if not rider:
+        raise HTTPException(status_code=404, detail="Rider not found")
+
+    # Update rider live location if provided
+    if payload.rider_latitude is not None and payload.rider_longitude is not None:
+        rider.latitude = payload.rider_latitude
+        rider.longitude = payload.rider_longitude
+
+    # Find nearest active zone to delivery point
+    zones_result = await db.execute(select(Zone).where(Zone.is_active == True))
+    zones = zones_result.scalars().all()
+
+    assigned_zone = None
+    min_distance = None
+    for zone in zones:
+        distance = location_service._calculate_distance(
+            payload.delivery_latitude,
+            payload.delivery_longitude,
+            zone.latitude,
+            zone.longitude,
+        )
+        if min_distance is None or distance < min_distance:
+            min_distance = distance
+            assigned_zone = zone
+
+    threshold_meters = settings.DELIVERY_ZONE_MAX_RADIUS_KM * 1000
+
+    if not assigned_zone or (min_distance is not None and min_distance > threshold_meters):
+        reverse = await location_service.reverse_geocode(
+            payload.delivery_latitude,
+            payload.delivery_longitude,
+        )
+        dynamic_name = (
+            (reverse.suburb or reverse.road or reverse.city or "Dynamic Zone")
+            if reverse
+            else "Dynamic Zone"
+        )
+        dynamic_city = (reverse.city if reverse and reverse.city else "Unknown City")
+        dynamic_state = (reverse.state if reverse and reverse.state else "")
+        dynamic_country = (reverse.country if reverse and reverse.country else "IN")
+        zone_id = f"auto-{dynamic_city}-{dynamic_name}-{str(payload.delivery_latitude)[:6]}-{str(payload.delivery_longitude)[:6]}"
+        zone_id = zone_id.lower().replace(" ", "-").replace("/", "-")
+
+        existing_dynamic = await db.execute(select(Zone).where(Zone.id == zone_id))
+        assigned_zone = existing_dynamic.scalar_one_or_none()
+        if not assigned_zone:
+            assigned_zone = Zone(
+                id=zone_id,
+                name=dynamic_name,
+                city=dynamic_city,
+                state=dynamic_state,
+                country=dynamic_country,
+                latitude=payload.delivery_latitude,
+                longitude=payload.delivery_longitude,
+                radius_km=settings.DELIVERY_ZONE_MAX_RADIUS_KM,
+                risk_level="medium",
+                base_premium_factor=1.0,
+                is_active=True,
+                created_at=datetime.utcnow(),
+            )
+            db.add(assigned_zone)
+            await db.flush()
+
+        min_distance = 0.0
+
+    in_zone = (min_distance or 0.0) <= (assigned_zone.radius_km * 1000)
+
+    reverse = await location_service.reverse_geocode(
+        payload.delivery_latitude,
+        payload.delivery_longitude,
+    )
+    city = reverse.city if reverse and reverse.city else assigned_zone.city
+    state = reverse.state if reverse and reverse.state else (assigned_zone.state or "")
+    country = reverse.country if reverse and reverse.country else (assigned_zone.country or "IN")
+
+    assessment = await risk_agent.assess_delivery_risk(
+        rider_id=rider.id,
+        zone_id=assigned_zone.id,
+        persona=PersonaType(rider.persona.value if hasattr(rider.persona, "value") else rider.persona),
+        delivery_lat=payload.delivery_latitude,
+        delivery_lon=payload.delivery_longitude,
+        city=city,
+        state=state,
+        country=country,
+        claim_history=[],
+    )
+
+    nearby_result = await db.execute(select(Rider).where(Rider.status == RiderStatus.ACTIVE.value))
+    nearby_riders = nearby_result.scalars().all()
+    in_radius_scores = []
+    for nearby in nearby_riders:
+        if nearby.latitude is None or nearby.longitude is None:
+            continue
+        distance = location_service._calculate_distance(
+            assigned_zone.latitude,
+            assigned_zone.longitude,
+            nearby.latitude,
+            nearby.longitude,
+        )
+        if distance <= assigned_zone.radius_km * 1000:
+            in_radius_scores.append(float(nearby.risk_score or 0.0))
+
+    if in_radius_scores:
+        zone_risk = sum(in_radius_scores) / len(in_radius_scores)
+        if zone_risk >= 0.7:
+            assigned_zone.risk_level = "high"
+            assigned_zone.base_premium_factor = 1.3
+        elif zone_risk >= 0.4:
+            assigned_zone.risk_level = "medium"
+            assigned_zone.base_premium_factor = 1.0
+        else:
+            assigned_zone.risk_level = "low"
+            assigned_zone.base_premium_factor = 0.85
+
+    rider.zone_id = assigned_zone.id
+    rider.risk_score = assessment.final_risk_score
+    await db.commit()
+
+    reason = (
+        f"Delivery is within {assigned_zone.name} coverage zone"
+        if in_zone
+        else f"Delivery is outside {assigned_zone.name} radius"
+    )
+
+    return DeliveryCheckInResponse(
+        rider_id=rider.id,
+        order_id=payload.order_id,
+        assigned_zone_id=assigned_zone.id,
+        assigned_zone_name=assigned_zone.name,
+        distance_to_zone_center_meters=round(min_distance or 0.0, 2),
+        is_delivery_in_coverage_zone=in_zone,
+        eligibility_reason=reason,
+        computed_risk_score=assessment.final_risk_score,
+        weather_risk=assessment.weather_risk,
+        traffic_risk=assessment.traffic_risk,
+        incident_risk=assessment.incident_risk,
+        assessed_at=assessment.assessed_at,
+    )
 
 
 @router.get("/stats/overview")

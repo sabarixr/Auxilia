@@ -138,6 +138,36 @@ export type PolicyStatsResponse = {
   total_coverage_liability: number;
 };
 
+export type ZoneListItem = {
+  id: string;
+  name: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+  radius_km: number;
+  risk_level: string;
+  base_premium_factor: number;
+  is_active: boolean;
+};
+
+export type RiderPoliciesResponse = {
+  rider_id: string;
+  policies: PolicyListItem[];
+};
+
+export type RiderClaimsResponse = {
+  rider_id: string;
+  claims: ClaimListItem[];
+};
+
+export type PolicyDetailsResponse = {
+  policy: PolicyListItem;
+  rider: RiderListItem | null;
+  zone: ZoneListItem | null;
+  days_remaining: number;
+  is_active: boolean;
+};
+
 export type RiderStatsResponse = {
   total_riders: number;
   active_riders: number;
@@ -199,11 +229,35 @@ export type PersonaBreakdownResponse = {
   }>;
 };
 
+export type ZoneHeatmapResponse = {
+  city?: string;
+  points: Array<{
+    zone_id: string;
+    zone_name: string;
+    city: string;
+    latitude: number;
+    longitude: number;
+    radius_km: number;
+    active_riders: number;
+    active_policies: number;
+    open_claims: number;
+    avg_risk_score: number;
+    heat_score: number;
+  }>;
+  count: number;
+  generated_at: string;
+};
+
+export type ArchitectureResponse = {
+  architecture: Record<string, string[]>;
+  pipeline: string[];
+};
+
 export async function getDashboardStats() {
   return apiFetch<DashboardStatsResponse>('/dashboard/stats');
 }
 
-export async function getClaimsChart(days = 30) {
+export async function getClaimsChart(days = 7) {
   return apiFetch<ClaimsChartResponse>(`/dashboard/claims-chart?days=${days}`);
 }
 
@@ -246,6 +300,37 @@ export async function getPolicies(params?: { status?: string }) {
   return apiFetch<PolicyListItem[]>(`/policies/${query ? `?${query}` : ''}`);
 }
 
+export async function createPolicy(payload: {
+  rider_id: string;
+  zone_id: string;
+  persona: 'qcommerce' | 'food_delivery';
+  duration_days: number;
+}) {
+  const response = await fetch(`${API_BASE_URL}/policies/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`Create policy failed: ${response.status}`);
+  return response.json() as Promise<PolicyListItem>;
+}
+
+export async function getPolicyDetails(policyId: string) {
+  return apiFetch<PolicyDetailsResponse>(`/policies/${policyId}/details`);
+}
+
+export async function cancelPolicy(policyId: string) {
+  const response = await fetch(`${API_BASE_URL}/policies/${policyId}/cancel`, { method: 'POST' });
+  if (!response.ok) throw new Error(`Cancel policy failed: ${response.status}`);
+  return response.json() as Promise<{ success: boolean; message: string }>;
+}
+
+export async function renewPolicy(policyId: string, durationDays = 7) {
+  const response = await fetch(`${API_BASE_URL}/policies/${policyId}/renew?duration_days=${durationDays}`, { method: 'POST' });
+  if (!response.ok) throw new Error(`Renew policy failed: ${response.status}`);
+  return response.json() as Promise<{ success: boolean }>;
+}
+
 export async function getPolicyStats() {
   return apiFetch<PolicyStatsResponse>('/policies/stats/overview');
 }
@@ -255,6 +340,47 @@ export async function getRiders(params?: { status?: string }) {
   if (params?.status && params.status !== 'all') search.set('status', params.status);
   const query = search.toString();
   return apiFetch<RiderListItem[]>(`/riders/${query ? `?${query}` : ''}`);
+}
+
+export async function getRider(riderId: string) {
+  return apiFetch<RiderListItem>(`/riders/${riderId}`);
+}
+
+export async function updateRider(
+  riderId: string,
+  payload: Partial<{
+    name: string;
+    email: string | null;
+    persona: 'qcommerce' | 'food_delivery';
+    zone_id: string;
+    latitude: number;
+    longitude: number;
+    status: 'active' | 'inactive' | 'suspended';
+  }>
+) {
+  const response = await fetch(`${API_BASE_URL}/riders/${riderId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`Update rider failed: ${response.status}`);
+  return response.json() as Promise<RiderListItem>;
+}
+
+export async function getRiderPolicies(riderId: string) {
+  return apiFetch<RiderPoliciesResponse>(`/riders/${riderId}/policies`);
+}
+
+export async function getRiderClaims(riderId: string) {
+  return apiFetch<RiderClaimsResponse>(`/riders/${riderId}/claims`);
+}
+
+export async function getZones(params?: { city?: string; is_active?: boolean }) {
+  const search = new URLSearchParams();
+  if (params?.city) search.set('city', params.city);
+  if (typeof params?.is_active === 'boolean') search.set('is_active', String(params.is_active));
+  const query = search.toString();
+  return apiFetch<ZoneListItem[]>(`/zones/${query ? `?${query}` : ''}`);
 }
 
 export async function getRiderStats() {
@@ -269,7 +395,7 @@ export async function triggerRefresh() {
   return fetch(`${API_BASE_URL}/triggers/check`, { method: 'POST' });
 }
 
-export async function getRevenueMetrics(days = 30) {
+export async function getRevenueMetrics(days = 7) {
   return apiFetch<RevenueMetricsResponse>(`/dashboard/revenue-metrics?days=${days}`);
 }
 
@@ -279,4 +405,13 @@ export async function getTriggerDistribution() {
 
 export async function getPersonaBreakdown() {
   return apiFetch<PersonaBreakdownResponse>('/dashboard/rider-personas');
+}
+
+export async function getZoneHeatmap(city?: string) {
+  const query = city ? `?city=${encodeURIComponent(city)}` : '';
+  return apiFetch<ZoneHeatmapResponse>(`/dashboard/zone-heatmap${query}`);
+}
+
+export async function getArchitecture() {
+  return apiFetch<ArchitectureResponse>('/dashboard/architecture');
 }

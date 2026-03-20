@@ -30,8 +30,8 @@ export const STATUS_COLORS = {
 export const TRIGGER_TYPES = {
   rain: { label: 'Heavy Rain', icon: 'CloudRain', color: 'blue' },
   traffic: { label: 'Traffic Jam', icon: 'Car', color: 'orange' },
-  surge: { label: 'Surge Pricing', icon: 'TrendingUp', color: 'purple' },
-  accident: { label: 'Accident Zone', icon: 'AlertTriangle', color: 'red' },
+  surge: { label: 'Low Demand', icon: 'TrendingUp', color: 'purple' },
+  road_disruption: { label: 'Road Disruption', icon: 'AlertTriangle', color: 'red' },
 } as const;
 
 // Chart Colors

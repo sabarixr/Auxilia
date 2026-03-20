@@ -20,15 +20,15 @@ from app.agents.risk_agent import risk_agent
 
 router = APIRouter(prefix="/policies", tags=["Policies"])
 
-# Premium configuration
+# Premium configuration (WEEKLY basis as per golden rules)
 BASE_PREMIUM = {
-    PersonaType.QCOMMERCE: 149.0,      # Higher base for q-commerce
-    PersonaType.FOOD_DELIVERY: 99.0    # Lower base for food delivery
+    PersonaType.QCOMMERCE: 99.0,      # Rs 99/week for Q-Commerce (Zepto/Blinkit)
+    PersonaType.FOOD_DELIVERY: 79.0   # Rs 79/week for food delivery (secondary)
 }
 
 COVERAGE_AMOUNTS = {
-    PersonaType.QCOMMERCE: 5000.0,     # Higher coverage for q-commerce
-    PersonaType.FOOD_DELIVERY: 3000.0  # Standard coverage for food delivery
+    PersonaType.QCOMMERCE: 2000.0,    # Rs 2000 weekly coverage for Q-Commerce
+    PersonaType.FOOD_DELIVERY: 1500.0 # Rs 1500 weekly coverage for food delivery
 }
 
 
@@ -194,7 +194,7 @@ async def cancel_policy(
 @router.post("/{policy_id}/renew")
 async def renew_policy(
     policy_id: str,
-    duration_days: int = 30,
+    duration_days: int = 7,  # Weekly renewal by default
     db: AsyncSession = Depends(get_db)
 ):
     """Renew an expiring/expired policy."""
@@ -251,7 +251,7 @@ async def calculate_premium_endpoint(
     rider_id: str,
     zone_id: str,
     persona: PersonaType,
-    duration_days: int = 30,
+    duration_days: int = 7,  # Weekly by default
     db: AsyncSession = Depends(get_db)
 ):
     """Calculate premium for a potential policy."""
@@ -295,20 +295,22 @@ async def calculate_premium(
     else:
         risk_factor = 1.0
     
-    # Duration factor (longer policies get discount)
-    if duration_days >= 365:
-        duration_factor = 0.8
-    elif duration_days >= 180:
+    # Duration factor (weekly model - longer commitments get discount)
+    # Standard is 7 days (1 week), discounts for multi-week
+    if duration_days >= 28:  # 4+ weeks
         duration_factor = 0.85
-    elif duration_days >= 90:
+    elif duration_days >= 21:  # 3 weeks
         duration_factor = 0.9
-    elif duration_days >= 30:
+    elif duration_days >= 14:  # 2 weeks
+        duration_factor = 0.95
+    elif duration_days >= 7:  # 1 week (standard)
         duration_factor = 1.0
     else:
-        duration_factor = 1.2  # Short-term policies cost more
+        duration_factor = 1.15  # Less than a week costs more
     
-    # Calculate final premium
-    final_premium = base_premium * zone_factor * risk_factor * duration_factor * (duration_days / 30)
+    # Calculate final premium (base is per-week, scale by weeks)
+    weeks = max(1, duration_days / 7)
+    final_premium = base_premium * zone_factor * risk_factor * duration_factor * weeks
     final_premium = round(final_premium, 2)
     
     return {

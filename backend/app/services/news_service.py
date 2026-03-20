@@ -55,6 +55,48 @@ class NewsService:
         except Exception as e:
             logger.error(f"News service error: {e}")
             return []
+
+    async def get_macro_incident_score(
+        self,
+        country: str = "India",
+        state: str = "",
+        city: str = "",
+        hours_back: int = 24,
+    ) -> Dict[str, Any]:
+        """
+        Multi-level incident score for national/state/city context.
+        Used for dynamic risk assessment beyond just local zone news.
+        """
+        levels = []
+
+        if country:
+            levels.append(("country", country))
+        if state:
+            levels.append(("state", state))
+        if city:
+            levels.append(("city", city))
+
+        weighted_score = 0.0
+        weights = {"country": 0.2, "state": 0.3, "city": 0.5}
+        detail = []
+
+        for level, target in levels:
+            incidents = await self.search_incidents(target, hours_back=hours_back)
+            if not incidents:
+                detail.append({"level": level, "target": target, "count": 0, "score": 0.0})
+                continue
+
+            severe = len([i for i in incidents if i.severity >= 0.7])
+            moderate = len([i for i in incidents if 0.4 <= i.severity < 0.7])
+            score = min(1.0, (severe * 0.25 + moderate * 0.1) / 4.0)
+            weighted_score += score * weights.get(level, 0.0)
+            detail.append({"level": level, "target": target, "count": len(incidents), "score": round(score, 3)})
+
+        return {
+            "score": round(min(1.0, weighted_score), 3),
+            "detail": detail,
+            "hours_back": hours_back,
+        }
     
     async def _fetch_news(self, city: str, hours_back: int = 24) -> List[Dict]:
         """

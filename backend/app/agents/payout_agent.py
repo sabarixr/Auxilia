@@ -168,10 +168,10 @@ class PayoutAgent:
         
         # Apply trigger-specific adjustments
         trigger_multipliers = {
-            "rain": 1.0,      # Full payout for rain
-            "traffic": 0.8,   # 80% for traffic
-            "accident": 1.2,  # 120% for accidents (more severe)
-            "surge": 0.6      # 60% for low surge (loss of income)
+            "rain": 1.0,           # Full payout for rain
+            "traffic": 0.8,        # 80% for traffic
+            "road_disruption": 1.2,  # 120% for road disruptions (more severe income loss)
+            "surge": 0.6           # 60% for low surge (loss of income)
         }
         
         multiplier = trigger_multipliers.get(trigger_type, 1.0)
@@ -254,7 +254,7 @@ class PayoutAgent:
         trigger_messages = {
             "rain": "Heavy rain",
             "traffic": "Severe traffic",
-            "accident": "Road incident",
+            "road_disruption": "Road disruption",
             "surge": "Low demand"
         }
         

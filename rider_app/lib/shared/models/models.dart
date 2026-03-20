@@ -146,7 +146,7 @@ class Policy {
           : DateTime.now(),
       endDate: json['end_date'] != null
           ? DateTime.parse(json['end_date'])
-          : DateTime.now().add(const Duration(days: 30)),
+          : DateTime.now().add(const Duration(days: 7)),
       status: json['status'] ?? 'active',
       txHash: json['tx_hash'],
       createdAt: json['created_at'] != null

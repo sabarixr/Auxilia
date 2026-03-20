@@ -29,7 +29,7 @@ export interface Claim {
   policyId: string;
   riderId: string;
   riderName: string;
-  triggerType: 'rain' | 'traffic' | 'surge' | 'accident';
+  triggerType: 'rain' | 'traffic' | 'surge' | 'road_disruption';
   triggerValue: number;
   threshold: number;
   amount: number;
@@ -43,7 +43,7 @@ export interface Claim {
 
 export interface Trigger {
   id: string;
-  type: 'rain' | 'traffic' | 'surge' | 'accident';
+  type: 'rain' | 'traffic' | 'surge' | 'road_disruption';
   zone: string;
   currentValue: number;
   threshold: number;
