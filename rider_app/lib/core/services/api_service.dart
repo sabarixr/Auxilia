@@ -3,9 +3,11 @@ import 'package:dio/dio.dart';
 import '../../../shared/models/models.dart';
 
 class ApiConfig {
-  static const String baseUrl = 'http://10.0.2.2:8000/api/v1';
+  // Use this for physical devices on the same network
+  static const String baseUrl = 'http://192.168.1.9:8000/api/v1';
   static const String localUrl = 'http://localhost:8000/api/v1';
   static const String emulatorUrl = 'http://10.0.2.2:8000/api/v1';
+  static const String networkUrl = 'http://192.168.1.9:8000/api/v1';
   static const Duration timeout = Duration(seconds: 30);
 }
 
