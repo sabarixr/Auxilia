@@ -4,14 +4,63 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/providers/providers.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../../../core/theme/theme.dart';
 
-class ProfileSettingsScreen extends ConsumerWidget {
+// Provider for notification enabled state
+final notificationsEnabledProvider = StateProvider<bool>((ref) => true);
+
+// Provider for selected language
+final selectedLanguageProvider = StateProvider<String>((ref) => 'en');
+
+// Available languages
+const Map<String, String> availableLanguages = {
+  'en': 'English',
+  'hi': 'हिंदी (Hindi)',
+  'ta': 'தமிழ் (Tamil)',
+  'te': 'తెలుగు (Telugu)',
+  'kn': 'ಕನ್ನಡ (Kannada)',
+  'ml': 'മലയാളം (Malayalam)',
+  'mr': 'मराठी (Marathi)',
+  'bn': 'বাংলা (Bengali)',
+};
+
+class ProfileSettingsScreen extends ConsumerStatefulWidget {
   const ProfileSettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfileSettingsScreen> createState() =>
+      _ProfileSettingsScreenState();
+}
+
+class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
+  final NotificationService _notificationService = NotificationService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    await _notificationService.initialize();
+    final prefs = await SharedPreferences.getInstance();
+
+    // Load notification setting
+    final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+    ref.read(notificationsEnabledProvider.notifier).state =
+        notificationsEnabled;
+
+    // Load language setting
+    final language = prefs.getString('selected_language') ?? 'en';
+    ref.read(selectedLanguageProvider.notifier).state = language;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final riderAsync = ref.watch(currentRiderProvider);
+    final notificationsEnabled = ref.watch(notificationsEnabledProvider);
+    final selectedLanguage = ref.watch(selectedLanguageProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -41,7 +90,7 @@ class ProfileSettingsScreen extends ConsumerWidget {
                       );
                     },
                     loading: () => const _LoadingCard(),
-                    error: (_, _) => const _MessageCard(
+                    error: (_, __) => const _MessageCard(
                       title: 'Unable to load profile',
                       subtitle: 'Check the backend connection and try again.',
                     ),
@@ -52,40 +101,130 @@ class ProfileSettingsScreen extends ConsumerWidget {
               riderAsync.when(
                 data: (rider) => _RiskCard(riskScore: rider?.riskScore ?? 0),
                 loading: () => const _LoadingCard(height: 170),
-                error: (_, _) => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
               ),
               const SizedBox(height: 24),
               Text('Settings', style: AppTypography.titleLarge),
               const SizedBox(height: 16),
-              _buildSettingsItem(
-                Icons.notifications_rounded,
-                'Notifications',
-                'Push alerts for triggers and payouts',
-                true,
-                0,
-              ),
-              _buildSettingsItem(
-                Icons.language_rounded,
-                'Language',
-                'English',
-                false,
-                1,
-              ),
-              _buildSettingsItem(
+
+              // Notifications toggle
+              _NotificationSettingItem(
+                enabled: notificationsEnabled,
+                onChanged: (value) async {
+                  ref.read(notificationsEnabledProvider.notifier).state = value;
+                  await _notificationService.setEnabled(value);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          value
+                              ? 'Notifications enabled'
+                              : 'Notifications disabled',
+                        ),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+              ).animate(delay: 200.ms).fadeIn().slideX(begin: 0.05),
+
+              // Language selector
+              _LanguageSettingItem(
+                currentLanguage: selectedLanguage,
+                onLanguageSelected: (langCode) async {
+                  ref.read(selectedLanguageProvider.notifier).state = langCode;
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('selected_language', langCode);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Language changed to ${availableLanguages[langCode]}',
+                        ),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+              ).animate(delay: 260.ms).fadeIn().slideX(begin: 0.05),
+
+              // Policy Updates (renamed from Coverage Feed)
+              _buildTappableItem(
                 Icons.shield_outlined,
-                'Coverage feed',
-                'Live backend powered policy updates',
-                false,
-                2,
+                'Policy Updates',
+                'View your policy history and changes',
+                1,
+                () => _showPolicyUpdates(context),
               ),
-              _buildSettingsItem(
+
+              // Help & Support
+              _buildTappableItem(
                 Icons.help_outline_rounded,
                 'Help & Support',
                 'FAQs and support contact',
-                false,
-                3,
+                2,
+                () => _showHelpSupport(context),
               ),
+
               const SizedBox(height: 24),
+
+              // TEST TRIGGER BUTTON - For demo purposes
+              _TestTriggerCard(
+                onTestNotification: () async {
+                  await _notificationService.sendTestNotification();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Test notification sent!'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+                onTestMovementAlert: () async {
+                  await _notificationService.notifyMovementDetected();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Movement alert sent!'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+                onTestTriggerAlert: () async {
+                  await _notificationService.notifyTriggerDetected(
+                    'Road Disruption',
+                    'Heavy waterlogging reported in your zone',
+                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Trigger alert sent!'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+                onTestClaimPaid: () async {
+                  await _notificationService.notifyClaimUpdate(
+                    'CLM-TEST-001',
+                    'paid',
+                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Claim paid notification sent!'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+              ).animate(delay: 400.ms).fadeIn(),
+
+              const SizedBox(height: 24),
+
+              // Logout button
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -126,65 +265,765 @@ class ProfileSettingsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildSettingsItem(
+  Widget _buildTappableItem(
     IconData icon,
     String title,
     String subtitle,
-    bool hasSwitch,
     int index,
+    VoidCallback onTap,
   ) {
-    return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(10),
+    return GestureDetector(
+          onTap: onTap,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: AppColors.textSecondary, size: 20),
                 ),
-                child: Icon(icon, color: AppColors.textSecondary, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: AppTypography.titleSmall),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: AppTypography.bodySmall.copyWith(
-                        color: AppColors.textTertiary,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: AppTypography.titleSmall),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: AppTypography.bodySmall.copyWith(
+                          color: AppColors.textTertiary,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              if (hasSwitch)
-                Switch(
-                  value: true,
-                  onChanged: (_) {},
-                  activeColor: AppColors.primary,
-                )
-              else
                 const Icon(
                   Icons.chevron_right_rounded,
                   color: AppColors.textTertiary,
                 ),
-            ],
+              ],
+            ),
           ),
         )
-        .animate(delay: Duration(milliseconds: 200 + (index * 60)))
+        .animate(delay: Duration(milliseconds: 320 + (index * 60)))
         .fadeIn()
         .slideX(begin: 0.05);
+  }
+
+  void _showPolicyUpdates(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => const _PolicyUpdatesSheet(),
+    );
+  }
+
+  void _showHelpSupport(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => const _HelpSupportSheet(),
+    );
+  }
+}
+
+// Notification settings item with working toggle
+class _NotificationSettingItem extends StatelessWidget {
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  const _NotificationSettingItem({
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.surfaceVariant,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.notifications_rounded,
+              color: AppColors.textSecondary,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Notifications', style: AppTypography.titleSmall),
+                const SizedBox(height: 2),
+                Text(
+                  enabled
+                      ? 'Alerts for triggers, claims & safety'
+                      : 'Notifications disabled',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: enabled,
+            onChanged: onChanged,
+            activeColor: AppColors.primary,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Language settings item with selector
+class _LanguageSettingItem extends StatelessWidget {
+  final String currentLanguage;
+  final ValueChanged<String> onLanguageSelected;
+
+  const _LanguageSettingItem({
+    required this.currentLanguage,
+    required this.onLanguageSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _showLanguageSelector(context),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.language_rounded,
+                color: AppColors.textSecondary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Language', style: AppTypography.titleSmall),
+                  const SizedBox(height: 2),
+                  Text(
+                    availableLanguages[currentLanguage] ?? 'English',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.textTertiary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showLanguageSelector(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => _LanguageSelectorSheet(
+        currentLanguage: currentLanguage,
+        onLanguageSelected: (lang) {
+          onLanguageSelected(lang);
+          Navigator.pop(context);
+        },
+      ),
+    );
+  }
+}
+
+class _LanguageSelectorSheet extends StatelessWidget {
+  final String currentLanguage;
+  final ValueChanged<String> onLanguageSelected;
+
+  const _LanguageSelectorSheet({
+    required this.currentLanguage,
+    required this.onLanguageSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Select Language', style: AppTypography.titleLarge),
+          const SizedBox(height: 8),
+          Text(
+            'Choose your preferred language',
+            style: AppTypography.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 20),
+          ...availableLanguages.entries.map((entry) {
+            final isSelected = entry.key == currentLanguage;
+            return ListTile(
+              onTap: () => onLanguageSelected(entry.key),
+              leading: Icon(
+                isSelected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_off,
+                color: isSelected ? AppColors.primary : AppColors.textTertiary,
+              ),
+              title: Text(
+                entry.value,
+                style: AppTypography.bodyMedium.copyWith(
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+              trailing: isSelected
+                  ? const Icon(Icons.check, color: AppColors.primary)
+                  : null,
+            );
+          }),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+// Test Trigger Card for demo purposes
+class _TestTriggerCard extends StatelessWidget {
+  final VoidCallback onTestNotification;
+  final VoidCallback onTestMovementAlert;
+  final VoidCallback onTestTriggerAlert;
+  final VoidCallback onTestClaimPaid;
+
+  const _TestTriggerCard({
+    required this.onTestNotification,
+    required this.onTestMovementAlert,
+    required this.onTestTriggerAlert,
+    required this.onTestClaimPaid,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.science_rounded, color: AppColors.warning, size: 24),
+              const SizedBox(width: 12),
+              Text(
+                'Test Triggers (Demo)',
+                style: AppTypography.titleMedium.copyWith(
+                  color: AppColors.warning,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Test notifications to verify the app is working correctly.',
+            style: AppTypography.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _TestButton(
+                label: 'Test Alert',
+                icon: Icons.notifications_active,
+                onTap: onTestNotification,
+              ),
+              _TestButton(
+                label: 'Movement',
+                icon: Icons.directions_bike,
+                onTap: onTestMovementAlert,
+              ),
+              _TestButton(
+                label: 'Trigger',
+                icon: Icons.warning_amber_rounded,
+                onTap: onTestTriggerAlert,
+              ),
+              _TestButton(
+                label: 'Claim Paid',
+                icon: Icons.paid_rounded,
+                onTap: onTestClaimPaid,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TestButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _TestButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: AppTypography.labelSmall.copyWith(
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Policy Updates Sheet
+class _PolicyUpdatesSheet extends StatelessWidget {
+  const _PolicyUpdatesSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.shield_outlined, color: AppColors.primary),
+              const SizedBox(width: 12),
+              Text('Policy Updates', style: AppTypography.titleLarge),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Expanded(
+            child: ListView(
+              children: const [
+                _PolicyUpdateItem(
+                  title: 'Weekly Premium Model',
+                  description: 'Pay Rs 99/week for Q-Commerce coverage',
+                  icon: Icons.payments_rounded,
+                  isNew: true,
+                ),
+                _PolicyUpdateItem(
+                  title: 'Loss of Income Protection',
+                  description:
+                      'Coverage for road disruptions, weather events, and traffic surges that affect your earnings',
+                  icon: Icons.umbrella_rounded,
+                ),
+                _PolicyUpdateItem(
+                  title: 'Instant Claims',
+                  description:
+                      'AI-powered claims processing with automatic payout within 24 hours',
+                  icon: Icons.flash_on_rounded,
+                ),
+                _PolicyUpdateItem(
+                  title: 'Zone-Based Coverage',
+                  description:
+                      'Coverage amount adjusted based on your operating zone risk profile',
+                  icon: Icons.map_rounded,
+                ),
+                _PolicyUpdateItem(
+                  title: 'Blockchain Verification',
+                  description:
+                      'All policy terms and claims are recorded on-chain for transparency',
+                  icon: Icons.verified_rounded,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PolicyUpdateItem extends StatelessWidget {
+  final String title;
+  final String description;
+  final IconData icon;
+  final bool isNew;
+
+  const _PolicyUpdateItem({
+    required this.title,
+    required this.description,
+    required this.icon,
+    this.isNew = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(title, style: AppTypography.titleSmall),
+                    ),
+                    if (isNew)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.success,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'NEW',
+                          style: AppTypography.caption.copyWith(
+                            color: AppColors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Help & Support Sheet
+class _HelpSupportSheet extends StatelessWidget {
+  const _HelpSupportSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.8,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.help_outline_rounded, color: AppColors.primary),
+              const SizedBox(width: 12),
+              Text('Help & Support', style: AppTypography.titleLarge),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Expanded(
+            child: ListView(
+              children: const [
+                _FAQItem(
+                  question: 'How does GigShield work?',
+                  answer:
+                      'GigShield uses AI to monitor real-time conditions like weather, traffic, and road disruptions in your zone. When these events affect your ability to earn, we automatically process a claim and pay you for lost income.',
+                ),
+                _FAQItem(
+                  question: 'What triggers a claim?',
+                  answer:
+                      'Claims are triggered by: Heavy rain/flooding, Traffic surges above 80%, Road closures or accidents in your zone, and other verified disruptions that impact gig worker earnings.',
+                ),
+                _FAQItem(
+                  question: 'How much coverage do I get?',
+                  answer:
+                      'Q-Commerce riders get up to Rs 2000/week coverage. The exact payout depends on the severity of the trigger and your policy terms.',
+                ),
+                _FAQItem(
+                  question: 'How fast are payouts?',
+                  answer:
+                      'Most claims are processed automatically within minutes. Payouts are typically credited within 24 hours of claim approval.',
+                ),
+                _FAQItem(
+                  question: 'How do I file a claim?',
+                  answer:
+                      'Claims are often filed automatically when triggers are detected. You can also manually file a claim from the Claims tab by tapping "File New Claim" and entering the delivery details.',
+                ),
+                _FAQItem(
+                  question: 'What if my claim is rejected?',
+                  answer:
+                      'If your claim is rejected, you\'ll receive a notification with the reason. Common reasons include: trigger not verified, delivery outside policy hours, or duplicate claim.',
+                ),
+                Divider(height: 32),
+                _ContactCard(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FAQItem extends StatefulWidget {
+  final String question;
+  final String answer;
+
+  const _FAQItem({required this.question, required this.answer});
+
+  @override
+  State<_FAQItem> createState() => _FAQItemState();
+}
+
+class _FAQItemState extends State<_FAQItem> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.question,
+                      style: AppTypography.titleSmall,
+                    ),
+                  ),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    color: AppColors.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Text(
+                widget.answer,
+                style: AppTypography.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContactCard extends StatelessWidget {
+  const _ContactCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Need more help?', style: AppTypography.titleMedium),
+          const SizedBox(height: 8),
+          Text(
+            'Contact our support team',
+            style: AppTypography.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _ContactButton(
+                  icon: Icons.email_rounded,
+                  label: 'Email',
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('support@gigshield.ai')),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _ContactButton(
+                  icon: Icons.chat_rounded,
+                  label: 'Chat',
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Chat coming soon!')),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContactButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ContactButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Text(label, style: AppTypography.buttonSmall),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
