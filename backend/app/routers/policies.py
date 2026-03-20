@@ -17,8 +17,18 @@ from app.models.schemas import (
     PolicyStatus, PersonaType, PremiumCalculation, APIResponse
 )
 from app.agents.risk_agent import risk_agent
+import hashlib
 
 router = APIRouter(prefix="/policies", tags=["Policies"])
+
+
+def generate_policy_hash(policy_id: str, rider_id: str, zone_id: str, premium: float) -> str:
+    """
+    Generate a simulated blockchain transaction hash for a policy.
+    In production, this would be a real on-chain transaction.
+    """
+    data = f"policy:{policy_id}:{rider_id}:{zone_id}:{premium}:{datetime.utcnow().isoformat()}"
+    return "0x" + hashlib.sha256(data.encode()).hexdigest()
 
 # Premium configuration (WEEKLY basis as per golden rules)
 BASE_PREMIUM = {
@@ -68,9 +78,18 @@ async def create_policy(
     )
     
     now = datetime.utcnow()
+    policy_id = str(uuid.uuid4())
+    
+    # Generate blockchain tx_hash immediately for demo
+    tx_hash = generate_policy_hash(
+        policy_id=policy_id,
+        rider_id=policy.rider_id,
+        zone_id=policy.zone_id,
+        premium=premium_calc["final_premium"]
+    )
     
     db_policy = Policy(
-        id=str(uuid.uuid4()),
+        id=policy_id,
         rider_id=policy.rider_id,
         zone_id=policy.zone_id,
         persona=policy.persona.value,
@@ -79,7 +98,7 @@ async def create_policy(
         start_date=now,
         end_date=now + timedelta(days=policy.duration_days),
         status=PolicyStatus.ACTIVE.value,
-        tx_hash=None,  # Will be set after blockchain confirmation
+        tx_hash=tx_hash,
         created_at=now
     )
     
@@ -217,9 +236,18 @@ async def renew_policy(
     
     now = datetime.utcnow()
     start_date = max(now, old_policy.end_date)  # Start after old policy ends
+    new_policy_id = str(uuid.uuid4())
+    
+    # Generate blockchain tx_hash immediately for demo
+    tx_hash = generate_policy_hash(
+        policy_id=new_policy_id,
+        rider_id=old_policy.rider_id,
+        zone_id=old_policy.zone_id,
+        premium=premium_calc["final_premium"]
+    )
     
     new_policy = Policy(
-        id=str(uuid.uuid4()),
+        id=new_policy_id,
         rider_id=old_policy.rider_id,
         zone_id=old_policy.zone_id,
         persona=old_policy.persona,
@@ -228,7 +256,7 @@ async def renew_policy(
         start_date=start_date,
         end_date=start_date + timedelta(days=duration_days),
         status=PolicyStatus.ACTIVE.value,
-        tx_hash=None,
+        tx_hash=tx_hash,
         created_at=now
     )
     
