@@ -298,9 +298,20 @@ async def seed_trigger_events(session: AsyncSession, zones: list) -> list:
     }
     
     # Create 300 trigger events over the last 7 days (increased for more zones)
+    # Weighted distribution for realistic analytics
+    trigger_weights = {
+        TriggerType.RAIN: 35,           # 35% - most common
+        TriggerType.TRAFFIC: 30,        # 30% - second most common
+        TriggerType.SURGE: 20,          # 20% - moderate
+        TriggerType.ROAD_DISRUPTION: 15 # 15% - least common but high impact
+    }
+    trigger_types_weighted = []
+    for t, weight in trigger_weights.items():
+        trigger_types_weighted.extend([t] * weight)
+    
     for _ in range(300):
         zone = random.choice(zones)
-        trigger_type = random.choice(list(TriggerType))
+        trigger_type = random.choice(trigger_types_weighted)
         threshold = thresholds[trigger_type]
         
         # 40% of triggers exceed threshold
@@ -383,13 +394,30 @@ async def seed_claims(session: AsyncSession, policies: list, riders: list, trigg
         else:
             fraud_score = round(random.uniform(0.0, 0.3), 2)
         
-        ai_decisions = [
-            "Claim verified. Weather data confirms heavy rainfall in zone.",
-            "Parametric trigger validated. Traffic congestion exceeded threshold.",
-            "Automatic approval. All conditions met for surge payout.",
-            "Claim approved after AI verification of incident reports.",
-            "Verified via location and timestamp correlation.",
-        ]
+        ai_decisions = {
+            TriggerType.RAIN: [
+                "Claim verified. Weather data confirms heavy rainfall in zone.",
+                "Heavy rain alert validated via OpenWeatherMap. Payout approved.",
+                "Rainfall exceeded 15mm/hr threshold. Auto-approved.",
+            ],
+            TriggerType.TRAFFIC: [
+                "Parametric trigger validated. Traffic congestion exceeded threshold.",
+                "Traffic index above 60% confirmed via TomTom API.",
+                "Severe traffic jam detected. Income loss verified.",
+            ],
+            TriggerType.SURGE: [
+                "Automatic approval. All conditions met for surge payout.",
+                "Platform surge detected. Delivery demand spike confirmed.",
+                "Surge multiplier validated. Compensation approved.",
+            ],
+            TriggerType.ROAD_DISRUPTION: [
+                "Claim approved after AI verification of incident reports.",
+                "Road disruption confirmed via NewsAPI + Gemini analysis.",
+                "Local incident verified. Zone activity dropped significantly.",
+            ],
+        }
+        
+        ai_decision = random.choice(ai_decisions.get(trigger_type, ["Claim verified via AI agent consensus."]))
         
         claim = Claim(
             id=str(uuid.uuid4()),
@@ -401,7 +429,7 @@ async def seed_claims(session: AsyncSession, policies: list, riders: list, trigg
             amount=amount,
             status=status,
             fraud_score=fraud_score,
-            ai_decision=random.choice(ai_decisions) if status in [ClaimStatus.APPROVED, ClaimStatus.PAID] else None,
+            ai_decision=ai_decision if status in [ClaimStatus.APPROVED, ClaimStatus.PAID] else None,
             tx_hash=f"0x{uuid.uuid4().hex}" if status == ClaimStatus.PAID else None,
             trigger_event_id=trigger_event.id,
             created_at=claim_time,
