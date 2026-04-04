@@ -144,6 +144,16 @@ class OnboardingScreen extends StatelessWidget {
                   .slideY(begin: 0.3, end: 0),
 
               const SizedBox(height: 16),
+
+              TextButton(
+                onPressed: () => context.go(AppRoutes.login),
+                child: Text(
+                  'Already have an account? Sign in',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: AppColors.primary,
+                  ),
+                ),
+              ).animate(delay: 760.ms).fadeIn(duration: 300.ms),
             ],
           ),
         ),

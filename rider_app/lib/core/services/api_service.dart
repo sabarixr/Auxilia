@@ -42,6 +42,14 @@ class ApiService {
     );
   }
 
+  void setAuthToken(String? token) {
+    if (token == null || token.isEmpty) {
+      _dio.options.headers.remove('Authorization');
+      return;
+    }
+    _dio.options.headers['Authorization'] = 'Bearer $token';
+  }
+
   Future<ApiResponse<T>> get<T>(
     String endpoint,
     T Function(dynamic json) fromJson,
@@ -71,6 +79,14 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> postJson(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _dio.post(endpoint, data: body);
+    return response.data as Map<String, dynamic>;
+  }
+
   String _handleError(DioException e) {
     switch (e.type) {
       case DioExceptionType.connectionTimeout:
@@ -87,21 +103,34 @@ class ApiService {
     }
   }
 
-  Future<ApiResponse<Rider>> registerRider({
+  Future<ApiResponse<RiderAuthSession>> registerRider({
     required String name,
     required String phone,
+    required String password,
     required String persona,
     required String zoneId,
     String? email,
   }) async {
     final normalizedPhone = phone.startsWith('+') ? phone : '+91$phone';
-    return post('/riders/', {
+    return post('/auth/rider/register', {
       'name': name,
       'phone': normalizedPhone,
+      'password': password,
       'email': email,
       'persona': persona,
       'zone_id': zoneId,
-    }, (json) => Rider.fromJson(json as Map<String, dynamic>));
+    }, (json) => RiderAuthSession.fromJson(json as Map<String, dynamic>));
+  }
+
+  Future<ApiResponse<RiderAuthSession>> loginRider({
+    required String phone,
+    required String password,
+  }) async {
+    final normalizedPhone = phone.startsWith('+') ? phone : '+91$phone';
+    return post('/auth/rider/login', {
+      'phone': normalizedPhone,
+      'password': password,
+    }, (json) => RiderAuthSession.fromJson(json as Map<String, dynamic>));
   }
 
   Future<ApiResponse<Rider>> getRiderById(String riderId) async {

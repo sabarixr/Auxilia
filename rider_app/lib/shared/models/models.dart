@@ -60,6 +60,29 @@ class Rider {
   }
 }
 
+class RiderAuthSession {
+  final String accessToken;
+  final String tokenType;
+  final int expiresIn;
+  final Rider rider;
+
+  RiderAuthSession({
+    required this.accessToken,
+    required this.tokenType,
+    required this.expiresIn,
+    required this.rider,
+  });
+
+  factory RiderAuthSession.fromJson(Map<String, dynamic> json) {
+    return RiderAuthSession(
+      accessToken: json['access_token'] ?? '',
+      tokenType: json['token_type'] ?? 'bearer',
+      expiresIn: json['expires_in'] ?? 0,
+      rider: Rider.fromJson(json['rider'] as Map<String, dynamic>),
+    );
+  }
+}
+
 /// Zone model
 class Zone {
   final String id;

@@ -25,8 +25,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   Future<void> _navigateToNext() async {
     await Future.delayed(const Duration(milliseconds: 2500));
     final riderId = await ref.read(currentRiderIdProvider.future);
+    final token = await ref.read(currentRiderTokenProvider.future);
     if (!mounted) return;
-    context.go(riderId == null ? AppRoutes.onboarding : AppRoutes.home);
+    context.go(riderId == null || token == null ? AppRoutes.onboarding : AppRoutes.home);
   }
 
   @override

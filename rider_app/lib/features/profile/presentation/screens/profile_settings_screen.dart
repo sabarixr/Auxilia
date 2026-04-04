@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/providers/providers.dart';
+import '../../../../core/router/app_router.dart';
 import '../../../../core/services/api_service.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/theme/theme.dart';
@@ -167,6 +169,21 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
                 2,
                 () => _showHelpSupport(context),
               ),
+
+              const SizedBox(height: 24),
+
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await ref.read(onboardingProvider.notifier).logout();
+                    if (!context.mounted) return;
+                    context.go(AppRoutes.login);
+                  },
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text('Log Out'),
+                ),
+              ).animate(delay: 320.ms).fadeIn(),
 
               const SizedBox(height: 24),
 
