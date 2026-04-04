@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/providers/providers.dart';
-import '../../../../core/services/api_service.dart';
 import '../../../../core/theme/theme.dart';
 
 class RouteRiskScreen extends ConsumerStatefulWidget {
@@ -55,13 +54,11 @@ class _RouteRiskScreenState extends ConsumerState<RouteRiskScreen> {
     
     setState(() => _isLoading = true);
     try {
-      final riderId = ref.read(riderIdProvider);
+      final riderId = await ref.read(currentRiderIdProvider.future);
       if (riderId == null) return;
       
       final api = ref.read(apiServiceProvider);
-      
-      // We assume you have this endpoint added to api_service.dart
-      final response = await api.post('/riders/$riderId/route-risk', {
+      final response = await api.postJson('/riders/$riderId/route-risk', {
         'rider_latitude': _currentLocation!.latitude,
         'rider_longitude': _currentLocation!.longitude,
         'delivery_latitude': _deliveryLocation!.latitude,
@@ -76,6 +73,7 @@ class _RouteRiskScreenState extends ConsumerState<RouteRiskScreen> {
         _riskScore = response['overall_risk_score'] as double;
       });
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to calculate route risk: $e')),
       );
@@ -153,7 +151,7 @@ class _RouteRiskScreenState extends ConsumerState<RouteRiskScreen> {
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white).withOpacity(0.9),
+                  color: Colors.white.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
@@ -177,7 +175,7 @@ class _RouteRiskScreenState extends ConsumerState<RouteRiskScreen> {
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)],
                       ),
@@ -223,7 +221,7 @@ class _RouteRiskScreenState extends ConsumerState<RouteRiskScreen> {
                       ),
                       child: _isLoading 
                           ? const CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.white)) 
-                          : const Text('Analyze Route Risk', style: TextStyle(fontSize: 16, valueColor: AlwaysStoppedAnimation<Color>(Colors.white))),
+                          : const Text('Analyze Route Risk', style: TextStyle(fontSize: 16, color: Colors.white)),
                     ),
                   ),
                 ],
