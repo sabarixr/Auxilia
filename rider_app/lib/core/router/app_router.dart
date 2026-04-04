@@ -4,6 +4,7 @@ import '../../features/splash/presentation/screens/splash_screen.dart';
 import '../../features/onboarding/presentation/screens/onboarding_screen.dart';
 import '../../features/onboarding/presentation/screens/persona_screen.dart';
 import '../../features/onboarding/presentation/screens/profile_screen.dart';
+import '../../features/onboarding/presentation/screens/login_screen.dart';
 import '../../features/onboarding/presentation/screens/zone_screen.dart';
 import '../../features/onboarding/presentation/screens/review_screen.dart';
 import '../../features/onboarding/presentation/screens/success_screen.dart';
@@ -19,6 +20,7 @@ class AppRoutes {
 
   static const String splash = '/';
   static const String onboarding = '/onboarding';
+  static const String login = '/login';
   static const String persona = '/onboarding/persona';
   static const String profile = '/onboarding/profile';
   static const String zone = '/onboarding/zone';
@@ -47,6 +49,11 @@ final GoRouter appRouter = GoRouter(
       path: AppRoutes.onboarding,
       name: 'onboarding',
       builder: (context, state) => const OnboardingScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.login,
+      name: 'login',
+      builder: (context, state) => const LoginScreen(),
     ),
     GoRoute(
       path: AppRoutes.persona,

@@ -23,6 +23,15 @@ final currentRiderIdProvider = FutureProvider<String?>((ref) async {
   return prefs.getString('rider_id');
 });
 
+final currentRiderTokenProvider = FutureProvider<String?>((ref) async {
+  final prefs = await ref.watch(sharedPreferencesProvider.future);
+  final token = prefs.getString('rider_token');
+  if (token != null) {
+    ref.read(apiServiceProvider).setAuthToken(token);
+  }
+  return token;
+});
+
 /// Current rider provider
 final currentRiderProvider = FutureProvider<Rider?>((ref) async {
   final riderId = await ref.watch(currentRiderIdProvider.future);
@@ -157,6 +166,7 @@ class OnboardingState {
   final String? name;
   final String? phone;
   final String? email;
+  final String? password;
   final String? persona;
   final String? zoneId;
   final Zone? selectedZone;
@@ -165,6 +175,7 @@ class OnboardingState {
     this.name,
     this.phone,
     this.email,
+    this.password,
     this.persona,
     this.zoneId,
     this.selectedZone,
@@ -174,6 +185,7 @@ class OnboardingState {
     String? name,
     String? phone,
     String? email,
+    String? password,
     String? persona,
     String? zoneId,
     Zone? selectedZone,
@@ -182,6 +194,7 @@ class OnboardingState {
       name: name ?? this.name,
       phone: phone ?? this.phone,
       email: email ?? this.email,
+      password: password ?? this.password,
       persona: persona ?? this.persona,
       zoneId: zoneId ?? this.zoneId,
       selectedZone: selectedZone ?? this.selectedZone,
@@ -189,7 +202,7 @@ class OnboardingState {
   }
 
   bool get isComplete =>
-      name != null && phone != null && persona != null && zoneId != null;
+      name != null && phone != null && password != null && persona != null && zoneId != null;
 }
 
 class OnboardingNotifier extends StateNotifier<OnboardingState> {
@@ -205,16 +218,17 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   void setProfile({
     required String name,
     required String phone,
+    required String password,
     String? email,
   }) {
-    state = state.copyWith(name: name, phone: phone, email: email);
+    state = state.copyWith(name: name, phone: phone, password: password, email: email);
   }
 
   void setZone(Zone zone) {
     state = state.copyWith(zoneId: zone.id, selectedZone: zone);
   }
 
-  Future<ApiResponse<Rider>> register() async {
+  Future<ApiResponse<RiderAuthSession>> register() async {
     if (!state.isComplete) {
       return ApiResponse.failure('Incomplete registration data');
     }
@@ -222,22 +236,51 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     final response = await _api.registerRider(
       name: state.name!,
       phone: state.phone!,
+      password: state.password!,
       persona: state.persona!,
       zoneId: state.zoneId!,
       email: state.email,
     );
 
     if (response.success && response.data != null) {
-      // Save rider ID to local storage
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('rider_id', response.data!.id);
+      await prefs.setString('rider_id', response.data!.rider.id);
+      await prefs.setString('rider_token', response.data!.accessToken);
+      _api.setAuthToken(response.data!.accessToken);
 
-      // Refresh the current rider provider
       _ref.invalidate(currentRiderIdProvider);
+      _ref.invalidate(currentRiderTokenProvider);
       _ref.invalidate(currentRiderProvider);
     }
 
     return response;
+  }
+
+  Future<ApiResponse<RiderAuthSession>> login({
+    required String phone,
+    required String password,
+  }) async {
+    final response = await _api.loginRider(phone: phone, password: password);
+    if (response.success && response.data != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('rider_id', response.data!.rider.id);
+      await prefs.setString('rider_token', response.data!.accessToken);
+      _api.setAuthToken(response.data!.accessToken);
+      _ref.invalidate(currentRiderIdProvider);
+      _ref.invalidate(currentRiderTokenProvider);
+      _ref.invalidate(currentRiderProvider);
+    }
+    return response;
+  }
+
+  Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('rider_id');
+    await prefs.remove('rider_token');
+    _api.setAuthToken(null);
+    _ref.invalidate(currentRiderIdProvider);
+    _ref.invalidate(currentRiderTokenProvider);
+    _ref.invalidate(currentRiderProvider);
   }
 
   void reset() {

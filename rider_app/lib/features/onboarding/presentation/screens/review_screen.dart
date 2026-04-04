@@ -53,11 +53,11 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       return;
     }
 
-    _pendingRiderId = riderResponse.data!.id;
+    _pendingRiderId = riderResponse.data!.rider.id;
 
     final orderResponse = await api.createPolicyPaymentOrder(
       flowType: 'new_policy',
-      riderId: riderResponse.data!.id,
+      riderId: riderResponse.data!.rider.id,
       zoneId: onboarding.zoneId!,
       persona: onboarding.persona!,
       durationDays: 7,

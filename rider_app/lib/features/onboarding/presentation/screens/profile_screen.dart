@@ -19,17 +19,21 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _isListening = false;
 
   @override
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
   bool get _isValid =>
-      _nameController.text.isNotEmpty && _phoneController.text.length >= 10;
+      _nameController.text.isNotEmpty &&
+      _phoneController.text.length >= 10 &&
+      _passwordController.text.length >= 6;
 
   void _simulateVoiceInput() {
     setState(() => _isListening = true);
@@ -182,6 +186,36 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
               ).animate(delay: 400.ms).fadeIn().slideY(begin: 0.1),
 
+              const SizedBox(height: 24),
+
+              Text(
+                'CREATE PASSWORD',
+                style: AppTypography.labelSmall.copyWith(
+                  color: AppColors.textSecondary,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _passwordController,
+                obscureText: true,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Min 6 characters',
+                  prefixIcon: const Icon(Icons.lock_outline_rounded),
+                  filled: true,
+                  fillColor: AppColors.surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.border),
+                  ),
+                ),
+              ).animate(delay: 450.ms).fadeIn().slideY(begin: 0.1),
+
               const SizedBox(height: 48),
 
               // Continue button
@@ -196,6 +230,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               .setProfile(
                                 name: _nameController.text.trim(),
                                 phone: _phoneController.text.trim(),
+                                password: _passwordController.text,
                               );
                           context.go(AppRoutes.zone);
                         }
