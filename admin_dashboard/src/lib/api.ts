@@ -152,6 +152,21 @@ export type PolicyStatsResponse = {
   total_coverage_liability: number;
 };
 
+export type PricingAlertsResponse = {
+  alerts: Array<{
+    zone_id: string;
+    zone_name: string;
+    city: string;
+    weekly_adjustment: number;
+    suggested_weekly_premium: number;
+    recommended_coverage_hours: number;
+    risk_level: string;
+    pricing_note: string;
+    assessed_at: string;
+  }>;
+  count: number;
+};
+
 export type ZoneListItem = {
   id: string;
   name: string;
@@ -352,6 +367,10 @@ export async function renewPolicy(policyId: string, durationDays = 7) {
 
 export async function getPolicyStats() {
   return apiFetch<PolicyStatsResponse>('/policies/stats/overview');
+}
+
+export async function getPricingAlerts() {
+  return apiFetch<PricingAlertsResponse>('/policies/alerts/pricing');
 }
 
 export async function getRiders(params?: { status?: string }) {

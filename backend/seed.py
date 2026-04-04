@@ -19,6 +19,17 @@ from app.agents.trigger_agent import ZONE_CONFIG
 from sqlalchemy import select
 
 
+BASE_PREMIUM = {
+    PersonaType.QCOMMERCE: 99.0,
+    PersonaType.FOOD_DELIVERY: 79.0,
+}
+
+BASE_COVERAGE = {
+    PersonaType.QCOMMERCE: 2000.0,
+    PersonaType.FOOD_DELIVERY: 1500.0,
+}
+
+
 async def seed_zones():
     """Seed zones from ZONE_CONFIG."""
     async with AsyncSessionLocal() as db:
@@ -113,8 +124,8 @@ async def seed_mock_data(zone_ids):
                     rider_id=rider.id,
                     zone_id=rider.zone_id,
                     persona=rider.persona,
-                    premium=random.uniform(100, 500),
-                    coverage=random.uniform(5000, 20000),
+                    premium=BASE_PREMIUM[rider.persona] + random.choice([-2, 0, 2, 4, 6]),
+                    coverage=BASE_COVERAGE[rider.persona] + random.choice([0, 200, 400]),
                     start_date=start_date,
                     end_date=end_date,
                     status=status,

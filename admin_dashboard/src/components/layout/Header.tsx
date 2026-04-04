@@ -2,7 +2,7 @@
 
 import { Bell, Search, ChevronDown } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { getLiveTriggers, getRecentClaims } from '@/lib/api';
+import { getLiveTriggers, getPricingAlerts, getRecentClaims } from '@/lib/api';
 
 
 export function Header() {
@@ -13,9 +13,10 @@ export function Header() {
   useEffect(() => {
     async function loadNotifications() {
       try {
-        const [triggersRes, claimsRes] = await Promise.all([
+        const [triggersRes, claimsRes, pricingRes] = await Promise.all([
           getLiveTriggers(),
-          getRecentClaims(5)
+          getRecentClaims(5),
+          getPricingAlerts(),
         ]);
 
         const newNotifs: {id: string, message: string, time: string, type: string}[] = [];
@@ -38,7 +39,17 @@ export function Header() {
           });
         });
 
-        setNotifications(newNotifs.slice(0, 10));
+        pricingRes.alerts.forEach((alert: any, i: number) => {
+          const direction = alert.weekly_adjustment > 0 ? 'up' : 'down';
+          newNotifs.push({
+            id: `pricing-${i}`,
+            message: `Weekly premium ${direction} to Rs ${alert.suggested_weekly_premium} in ${alert.zone_name} (${alert.pricing_note})`,
+            time: new Date(alert.assessed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            type: 'pricing',
+          });
+        });
+
+        setNotifications(newNotifs.slice(0, 12));
         setUnreadCount(newNotifs.length);
       } catch (e) {
         console.error("Failed to load notifications", e);

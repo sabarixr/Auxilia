@@ -42,6 +42,72 @@ COVERAGE_AMOUNTS = {
     PersonaType.FOOD_DELIVERY: 1500.0 # Rs 1500 weekly coverage for food delivery
 }
 
+BASE_COVERAGE_HOURS = {
+    PersonaType.QCOMMERCE: 60,
+    PersonaType.FOOD_DELIVERY: 48,
+}
+
+
+def _calculate_weekly_adjustment(
+    base_premium: float,
+    zone_factor: float,
+    risk_score: float,
+    weather_risk: float,
+    traffic_risk: float,
+    incident_risk: float,
+) -> tuple[float, str]:
+    zone_adjustment = round((zone_factor - 1.0) * 10)
+
+    if risk_score <= 0.30:
+        risk_adjustment = -2
+    elif risk_score <= 0.45:
+        risk_adjustment = 0
+    elif risk_score <= 0.60:
+        risk_adjustment = 2
+    elif risk_score <= 0.75:
+        risk_adjustment = 4
+    else:
+        risk_adjustment = 6
+
+    event_adjustment = 0
+    reasons: list[str] = []
+    if weather_risk >= 0.55:
+        event_adjustment += 2
+        reasons.append("predictive weather pressure")
+    if traffic_risk >= 0.60:
+        event_adjustment += 1
+        reasons.append("hyper-local congestion")
+    if incident_risk >= 0.50:
+        event_adjustment += 1
+        reasons.append("delivery corridor disruption")
+
+    weekly_adjustment = max(-4, min(8, zone_adjustment + risk_adjustment + event_adjustment))
+    if weekly_adjustment < 0:
+        note = f"Rs {abs(weekly_adjustment)} weekly discount for lower-risk operating conditions"
+    elif weekly_adjustment > 0:
+        note = f"Rs {weekly_adjustment} weekly uplift for elevated hyper-local disruption risk"
+    else:
+        note = "Base weekly premium retained for balanced local risk"
+
+    if reasons and weekly_adjustment > 0:
+        note = f"{note} ({', '.join(reasons)})"
+
+    return float(weekly_adjustment), note
+
+
+def _recommended_coverage_hours(
+    persona: PersonaType,
+    weather_risk: float,
+    incident_risk: float,
+    final_risk_score: float,
+) -> int:
+    extra_hours = 0
+    if weather_risk >= 0.60:
+        extra_hours += 6
+    if incident_risk >= 0.50 or final_risk_score >= 0.65:
+        extra_hours += 6
+    return BASE_COVERAGE_HOURS.get(persona, 48) + extra_hours
+
 
 @router.post("/", response_model=PolicyResponse)
 async def create_policy(
@@ -291,6 +357,50 @@ async def calculate_premium_endpoint(
     return await calculate_premium(rider_id, zone_id, persona, duration_days, db)
 
 
+@router.get("/alerts/pricing")
+async def get_pricing_alerts(
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    """Surface admin-facing alerts for weekly premium shifts driven by local risk."""
+    zones_result = await db.execute(select(Zone).where(Zone.is_active == True))
+    zones = zones_result.scalars().all()
+
+    alerts = []
+    for zone in zones:
+        assessment = await risk_agent.assess_zone_risk(zone.id)
+        weekly_adjustment, pricing_note = _calculate_weekly_adjustment(
+            base_premium=BASE_PREMIUM[PersonaType.QCOMMERCE],
+            zone_factor=zone.base_premium_factor,
+            risk_score=float(assessment.get("combined_risk", 0.0)),
+            weather_risk=float(assessment.get("weather_risk", 0.0)),
+            traffic_risk=float(assessment.get("traffic_risk", 0.0)),
+            incident_risk=float(assessment.get("incident_risk", 0.0)),
+        )
+        if weekly_adjustment == 0:
+            continue
+
+        alerts.append({
+            "zone_id": zone.id,
+            "zone_name": zone.name,
+            "city": zone.city,
+            "weekly_adjustment": weekly_adjustment,
+            "suggested_weekly_premium": BASE_PREMIUM[PersonaType.QCOMMERCE] + weekly_adjustment,
+            "recommended_coverage_hours": _recommended_coverage_hours(
+                PersonaType.QCOMMERCE,
+                float(assessment.get("weather_risk", 0.0)),
+                float(assessment.get("incident_risk", 0.0)),
+                float(assessment.get("combined_risk", 0.0)),
+            ),
+            "risk_level": assessment.get("risk_level", "medium"),
+            "pricing_note": pricing_note,
+            "assessed_at": assessment.get("assessed_at"),
+        })
+
+    alerts.sort(key=lambda item: abs(item["weekly_adjustment"]), reverse=True)
+    return {"alerts": alerts[:8], "count": len(alerts)}
+
+
 async def calculate_premium(
     rider_id: str,
     zone_id: str,
@@ -316,6 +426,7 @@ async def calculate_premium(
     )
     rider = rider_result.scalar_one_or_none()
     
+    assessment = None
     if rider:
         assessment = await risk_agent.assess_rider_risk(
             rider_id=rider_id,
@@ -347,9 +458,30 @@ async def calculate_premium(
     else:
         duration_factor = 1.15  # Less than a week costs more
     
-    # Calculate final premium (base is per-week, scale by weeks)
+    if assessment is not None:
+        weekly_adjustment, pricing_note = _calculate_weekly_adjustment(
+            base_premium=base_premium,
+            zone_factor=zone_factor,
+            risk_score=assessment.final_risk_score,
+            weather_risk=assessment.weather_risk,
+            traffic_risk=assessment.traffic_risk,
+            incident_risk=assessment.incident_risk,
+        )
+        recommended_coverage_hours = _recommended_coverage_hours(
+            persona=persona,
+            weather_risk=assessment.weather_risk,
+            incident_risk=assessment.incident_risk,
+            final_risk_score=assessment.final_risk_score,
+        )
+    else:
+        weekly_adjustment = 0.0
+        pricing_note = "Base weekly premium retained for balanced local risk"
+        recommended_coverage_hours = BASE_COVERAGE_HOURS.get(persona, 48)
+
+    # Calculate final premium (keep weekly pricing stable and easy to explain)
     weeks = max(1, duration_days / 7)
-    final_premium = base_premium * zone_factor * risk_factor * duration_factor * weeks
+    weekly_premium = max(base_premium - 4, min(base_premium + 8, base_premium + weekly_adjustment))
+    final_premium = weekly_premium * duration_factor * weeks
     final_premium = round(final_premium, 2)
     
     return {
@@ -357,14 +489,21 @@ async def calculate_premium(
         "zone_factor": zone_factor,
         "persona_factor": 1.0,  # Already in base
         "risk_factor": risk_factor,
+        "weekly_adjustment": weekly_adjustment,
         "duration_factor": duration_factor,
         "duration_days": duration_days,
         "final_premium": final_premium,
         "coverage": base_coverage,
+        "recommended_coverage_hours": recommended_coverage_hours,
+        "pricing_note": pricing_note,
         "breakdown": {
             "base": base_premium,
-            "after_zone": round(base_premium * zone_factor, 2),
-            "after_risk": round(base_premium * zone_factor * risk_factor, 2),
+            "weekly_adjustment": weekly_adjustment,
+            "weekly_premium": round(weekly_premium, 2),
+            "risk_score": round(assessment.final_risk_score, 3) if assessment else 0.0,
+            "weather_risk": round(assessment.weather_risk, 3) if assessment else 0.0,
+            "traffic_risk": round(assessment.traffic_risk, 3) if assessment else 0.0,
+            "incident_risk": round(assessment.incident_risk, 3) if assessment else 0.0,
             "after_duration": final_premium
         }
     }

@@ -177,6 +177,12 @@ class _PolicyDetailsCard extends StatelessWidget {
 
   const _PolicyDetailsCard({required this.policy});
 
+  double get _weeklyPremium {
+    final totalDays = policy.endDate.difference(policy.startDate).inDays;
+    final weeks = totalDays <= 0 ? 1.0 : (totalDays / 7).clamp(1, 52).toDouble();
+    return policy.premium / weeks;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -192,7 +198,12 @@ class _PolicyDetailsCard extends StatelessWidget {
           _buildDivider(),
           _buildDetailRow(
             'Premium',
-            'Rs ${policy.premium.toStringAsFixed(0)} / week',
+            'Rs ${_weeklyPremium.toStringAsFixed(0)} / week',
+          ),
+          _buildDivider(),
+          _buildDetailRow(
+            'Total Paid',
+            'Rs ${policy.premium.toStringAsFixed(0)}',
           ),
           _buildDivider(),
           _buildDetailRow(
@@ -295,6 +306,17 @@ class _PolicyActionsState extends ConsumerState<_PolicyActions> {
   late final Razorpay _razorpay;
   int? _pendingWeeks;
   Map<String, dynamic>? _pendingOrder;
+
+  double get _weeklyPremium {
+    final totalDays = widget.policy.endDate.difference(widget.policy.startDate).inDays;
+    final weeks = totalDays <= 0 ? 1.0 : (totalDays / 7).clamp(1, 52).toDouble();
+    return widget.policy.premium / weeks;
+  }
+
+  double _quoteForWeeks(int weeks) {
+    final discountFactor = weeks >= 4 ? 0.85 : weeks >= 2 ? 0.95 : 1.0;
+    return _weeklyPremium * weeks * discountFactor;
+  }
 
   @override
   void initState() {
@@ -499,7 +521,7 @@ class _PolicyActionsState extends ConsumerState<_PolicyActions> {
               Expanded(
                 child: _ActionButton(
                   label: '1 Week',
-                  subtitle: 'Rs ${widget.policy.premium.toStringAsFixed(0)}',
+                  subtitle: 'Rs ${_quoteForWeeks(1).toStringAsFixed(0)}',
                   onTap: _loading ? null : () => _renewPolicy(1),
                   isPrimary: true,
                 ),
@@ -508,8 +530,7 @@ class _PolicyActionsState extends ConsumerState<_PolicyActions> {
               Expanded(
                 child: _ActionButton(
                   label: '2 Weeks',
-                  subtitle:
-                      'Rs ${(widget.policy.premium * 1.9).toStringAsFixed(0)}',
+                  subtitle: 'Rs ${_quoteForWeeks(2).toStringAsFixed(0)}',
                   onTap: _loading ? null : () => _renewPolicy(2),
                 ),
               ),
@@ -517,8 +538,7 @@ class _PolicyActionsState extends ConsumerState<_PolicyActions> {
               Expanded(
                 child: _ActionButton(
                   label: '4 Weeks',
-                  subtitle:
-                      'Rs ${(widget.policy.premium * 3.6).toStringAsFixed(0)}',
+                  subtitle: 'Rs ${_quoteForWeeks(4).toStringAsFixed(0)}',
                   onTap: _loading ? null : () => _renewPolicy(4),
                 ),
               ),

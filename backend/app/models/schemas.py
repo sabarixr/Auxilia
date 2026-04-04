@@ -526,8 +526,11 @@ class PremiumCalculation(BaseModel):
     zone_factor: float
     persona_factor: float
     risk_factor: float
+    weekly_adjustment: float = 0.0
     final_premium: float
     coverage: float
+    recommended_coverage_hours: int = 0
+    pricing_note: str = ""
     breakdown: dict
 
 
