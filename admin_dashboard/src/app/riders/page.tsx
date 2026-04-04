@@ -14,7 +14,7 @@ import {
   type ClaimListItem,
   type PolicyListItem,
   type ZoneListItem,
-  updateRider,
+  updateRider, createRider,
 } from '@/lib/api';
 import { cn, formatCurrency, formatDate, getStatusBadgeClass } from '@/lib/utils';
 
@@ -30,6 +30,9 @@ export default function RidersPage() {
   const [zones, setZones] = useState<ZoneListItem[]>([]);
   const [assigningRiderId, setAssigningRiderId] = useState<string | null>(null);
   const [assignZoneId, setAssignZoneId] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newRider, setNewRider] = useState({ name: '', phone: '', persona: 'qcommerce' as const, zone_id: '' });
+
 
   async function reload() {
     const [items, overview] = await Promise.all([getRiders(), getRiderStats()]);
@@ -69,10 +72,20 @@ export default function RidersPage() {
           <p className="text-slate-500">Manage registered delivery riders</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+          <button onClick={() => {
+            const csv = 'ID,Name,Phone,Persona,Zone,Status,Risk
+' + riders.map(r => `${r.id},${r.name},${r.phone},${r.persona},${r.zone_id},${r.status},${r.risk_score}`).join('
+');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'riders.csv';
+            a.click();
+          }} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
             <Download className="h-4 w-4" /> Export
           </button>
-          <button className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-orange-600">
+          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-orange-600">
             <UserPlus className="h-4 w-4" /> Add Rider
           </button>
         </div>
@@ -161,6 +174,48 @@ export default function RidersPage() {
         })}
       </div>
 
+      {showAddModal ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setShowAddModal(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900">Add New Rider</h3>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Name</label>
+                <input type="text" value={newRider.name} onChange={e => setNewRider({...newRider, name: e.target.value})} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-500" placeholder="John Doe" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Phone</label>
+                <input type="text" value={newRider.phone} onChange={e => setNewRider({...newRider, phone: e.target.value})} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-500" placeholder="+919876543210" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Persona</label>
+                <select value={newRider.persona} onChange={e => setNewRider({...newRider, persona: e.target.value as any})} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-500">
+                  <option value="qcommerce">Q-Commerce</option>
+                  <option value="food_delivery">Food Delivery</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Zone</label>
+                <select value={newRider.zone_id} onChange={e => setNewRider({...newRider, zone_id: e.target.value})} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-500">
+                  <option value="">Select a zone</option>
+                  {zones.map(z => <option key={z.id} value={z.id}>{z.name} ({z.city})</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setShowAddModal(false)} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">Cancel</button>
+              <button onClick={async () => {
+                if (!newRider.name || !newRider.phone || !newRider.zone_id) return alert("Please fill all fields");
+                await createRider(newRider);
+                await reload();
+                setShowAddModal(false);
+                setNewRider({ name: '', phone: '', persona: 'qcommerce', zone_id: '' });
+              }} className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600">Save Rider</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      
       {selectedRider ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setSelectedRider(null)}>
           <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>

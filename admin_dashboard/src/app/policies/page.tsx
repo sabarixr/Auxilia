@@ -72,7 +72,17 @@ export default function PoliciesPage() {
           <p className="text-slate-500">Manage all rider insurance policies</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+          <button onClick={() => {
+            const csv = 'ID,Rider ID,Zone ID,Persona,Premium,Coverage,Start Date,End Date,Status
+' + policies.map(p => `${p.id},${p.rider_id},${p.zone_id},${p.persona},${p.premium},${p.coverage},${p.start_date},${p.end_date},${p.status}`).join('
+');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'policies.csv';
+            a.click();
+          }} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
             <Download className="h-4 w-4" /> Export
           </button>
           <button onClick={() => setShowCreatePolicy(true)} className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-orange-600">

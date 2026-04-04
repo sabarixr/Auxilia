@@ -1,3 +1,4 @@
+import 'route_risk_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -361,7 +362,28 @@ class _DeliveryCheckInCardState extends ConsumerState<_DeliveryCheckInCard> {
             'Delivery Check-in (Insurance Validation)',
             style: AppTypography.titleSmall,
           ),
+          
           const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const RouteRiskScreen()),
+                );
+              },
+              icon: const Icon(Icons.map),
+              label: const Text('Open Interactive Map & Analyze Route'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                side: BorderSide(color: AppColors.primary),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 16),
           TextField(
             controller: _orderController,
             decoration: const InputDecoration(labelText: 'Order ID (optional)'),

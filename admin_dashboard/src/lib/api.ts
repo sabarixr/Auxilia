@@ -387,6 +387,25 @@ export async function updateRider(
   return response.json() as Promise<RiderListItem>;
 }
 
+export async function createRider(payload: {
+  name: string;
+  phone: string;
+  email?: string;
+  persona: 'qcommerce' | 'food_delivery';
+  zone_id: string;
+  latitude?: number;
+  longitude?: number;
+}) {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/riders/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`Create rider failed: ${response.status}`);
+  return response.json() as Promise<RiderListItem>;
+}
+
 export async function getRiderPolicies(riderId: string) {
   return apiFetch<RiderPoliciesResponse>(`/riders/${riderId}/policies`);
 }

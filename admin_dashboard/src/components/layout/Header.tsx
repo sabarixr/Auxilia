@@ -1,16 +1,55 @@
 'use client';
 
 import { Bell, Search, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getLiveTriggers, getRecentClaims } from '@/lib/api';
+
 
 export function Header() {
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<{id: string, message: string, time: string, type: string}[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  const notifications = [
-    { id: 1, message: 'New claim submitted - Rain trigger in Andheri', time: '2 min ago', type: 'claim' },
-    { id: 2, message: 'Policy #POL-2847 expired', time: '15 min ago', type: 'policy' },
-    { id: 3, message: 'Traffic surge detected in Dadar zone', time: '32 min ago', type: 'trigger' },
-  ];
+  useEffect(() => {
+    async function loadNotifications() {
+      try {
+        const [triggersRes, claimsRes] = await Promise.all([
+          getLiveTriggers(),
+          getRecentClaims(5)
+        ]);
+
+        const newNotifs: {id: string, message: string, time: string, type: string}[] = [];
+        
+        triggersRes.triggers.forEach((t: any, i: number) => {
+          newNotifs.push({
+            id: `trigger-${i}`,
+            message: `${t.trigger_type.toUpperCase()} alert in ${t.zone_name}`,
+            time: new Date(t.last_updated).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+            type: 'trigger'
+          });
+        });
+
+        claimsRes.claims.forEach((c: any, i: number) => {
+          newNotifs.push({
+            id: `claim-${i}`,
+            message: `New claim (${c.trigger_type}) - ${c.status}`,
+            time: new Date(c.created_at).toLocaleDateString(),
+            type: 'claim'
+          });
+        });
+
+        setNotifications(newNotifs.slice(0, 10));
+        setUnreadCount(newNotifs.length);
+      } catch (e) {
+        console.error("Failed to load notifications", e);
+      }
+    }
+    
+    void loadNotifications();
+    const interval = setInterval(loadNotifications, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6 shadow-sm">
@@ -39,9 +78,11 @@ export function Header() {
             className="relative rounded-xl bg-slate-100 p-2.5 transition-colors hover:bg-slate-200"
           >
             <Bell className="h-5 w-5 text-slate-600" />
-            <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-orange-500 text-xs font-bold text-white">
-              3
-            </span>
+                        {unreadCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-orange-500 text-xs font-bold text-white">
+                {unreadCount}
+              </span>
+            )}
           </button>
 
           {showNotifications && (

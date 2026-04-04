@@ -98,6 +98,27 @@ class DeliveryCheckInResponse(BaseModel):
     assessed_at: datetime
 
 
+class RouteRiskRequest(BaseModel):
+    rider_latitude: float
+    rider_longitude: float
+    delivery_latitude: float
+    delivery_longitude: float
+
+
+class RouteRiskResponse(BaseModel):
+    path_coordinates: List[List[float]]  # List of [lat, lon]
+    incidents: List[dict]
+    overall_risk_score: float
+    risk_factors: List[str]
+    epicenter_multiplier: float
+
+
+class LocationHistoryCreate(BaseModel):
+    latitude: float
+    longitude: float
+    timestamp: Optional[datetime] = None
+
+
 # Zone Schemas
 class ZoneCreate(BaseModel):
     id: str

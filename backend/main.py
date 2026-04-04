@@ -23,6 +23,7 @@ from app.routers import (
     weather_router,
     payments_router,
     auth_router,
+    route_risk
 )
 from app.agents.trigger_agent import trigger_agent
 
@@ -120,6 +121,7 @@ app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(weather_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(route_risk.router, prefix="/api/v1")
 
 
 @app.get("/")
