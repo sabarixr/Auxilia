@@ -73,9 +73,7 @@ export default function PoliciesPage() {
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => {
-            const csv = 'ID,Rider ID,Zone ID,Persona,Premium,Coverage,Start Date,End Date,Status
-' + policies.map(p => `${p.id},${p.rider_id},${p.zone_id},${p.persona},${p.premium},${p.coverage},${p.start_date},${p.end_date},${p.status}`).join('
-');
+            const csv = 'ID,Rider ID,Zone ID,Persona,Premium,Coverage,Start Date,End Date,Status\n' + policies.map(p => `${p.id},${p.rider_id},${p.zone_id},${p.persona},${p.premium},${p.coverage},${p.start_date},${p.end_date},${p.status}`).join('\n');
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');

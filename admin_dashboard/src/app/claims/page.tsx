@@ -57,7 +57,19 @@ export default function ClaimsPage() {
           <h1 className="text-2xl font-bold text-slate-900">Claims Management</h1>
           <p className="text-slate-500">Review and process insurance claims</p>
         </div>
-        <button className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-orange-600">
+        <button
+          onClick={() => {
+            const csv = 'Claim ID,Policy ID,Rider ID,Trigger Type,Trigger Value,Threshold,Amount,Fraud Score,Status,Created At\n' + claims.map((claim) => `${claim.id},${claim.policy_id},${claim.rider_id},${claim.trigger_type},${claim.trigger_value},${claim.threshold},${claim.amount},${claim.fraud_score},${claim.status},${claim.created_at}`).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'claims.csv';
+            a.click();
+            window.URL.revokeObjectURL(url);
+          }}
+          className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-orange-600"
+        >
           <Download className="h-4 w-4" />Export Claims
         </button>
       </div>
