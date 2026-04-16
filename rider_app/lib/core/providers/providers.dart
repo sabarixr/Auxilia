@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:async';
 import 'dart:math' as math;
 import '../services/api_service.dart';
 import '../../shared/models/models.dart';
@@ -202,7 +204,11 @@ class OnboardingState {
   }
 
   bool get isComplete =>
-      name != null && phone != null && password != null && persona != null && zoneId != null;
+      name != null &&
+      phone != null &&
+      password != null &&
+      persona != null &&
+      zoneId != null;
 }
 
 class OnboardingNotifier extends StateNotifier<OnboardingState> {
@@ -221,7 +227,12 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     required String password,
     String? email,
   }) {
-    state = state.copyWith(name: name, phone: phone, password: password, email: email);
+    state = state.copyWith(
+      name: name,
+      phone: phone,
+      password: password,
+      email: email,
+    );
   }
 
   void setZone(Zone zone) {
@@ -337,13 +348,34 @@ final locationTrackingProvider = StreamProvider<Position>((ref) async* {
   );
   yield initialPosition;
 
-  // Then stream updates
-  yield* Geolocator.getPositionStream(
-    locationSettings: const LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 50,
-    ),
+  // Then stream updates (background-friendly settings)
+  LocationSettings locationSettings = const LocationSettings(
+    accuracy: LocationAccuracy.best,
+    distanceFilter: 15,
   );
+
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    locationSettings = AndroidSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 15,
+      intervalDuration: Duration(seconds: 30),
+      foregroundNotificationConfig: ForegroundNotificationConfig(
+        notificationTitle: 'Auxilia tracking active',
+        notificationText: 'Live route protection is running in background.',
+        enableWakeLock: true,
+      ),
+    );
+  } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+    locationSettings = AppleSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 15,
+      activityType: ActivityType.automotiveNavigation,
+      pauseLocationUpdatesAutomatically: false,
+      showBackgroundLocationIndicator: true,
+    );
+  }
+
+  yield* Geolocator.getPositionStream(locationSettings: locationSettings);
 });
 
 final architectureProvider = FutureProvider<Map<String, dynamic>>((ref) async {
@@ -450,6 +482,33 @@ final locationSyncProvider = Provider<void>((ref) {
   });
 });
 
+final backgroundLocationSyncProvider = Provider<void>((ref) {
+  DateTime? lastSyncedAt;
+
+  ref.listen<AsyncValue<Position>>(locationTrackingProvider, (_, next) {
+    next.whenData((position) {
+      final now = DateTime.now();
+      if (lastSyncedAt != null &&
+          now.difference(lastSyncedAt!).inSeconds < 30) {
+        return;
+      }
+
+      unawaited(() async {
+        final rider = await ref.read(currentRiderProvider.future);
+        if (rider == null) return;
+
+        final api = ref.read(apiServiceProvider);
+        await api.updateRiderLocation(
+          riderId: rider.id,
+          latitude: position.latitude,
+          longitude: position.longitude,
+        );
+        lastSyncedAt = now;
+      }());
+    });
+  });
+});
+
 final zoneHeatmapProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   final api = ref.watch(apiServiceProvider);
   final response = await api.getZoneHeatmap();
@@ -520,6 +579,18 @@ final claimHistoryProvider = FutureProvider<List<Claim>>((ref) async {
 
   final api = ref.watch(apiServiceProvider);
   final response = await api.getRiderClaimHistory(riderId);
+  if (response.success && response.data != null) return response.data!;
+  return [];
+});
+
+final deliveryHistoryProvider = FutureProvider<List<DeliveryHistoryItem>>((
+  ref,
+) async {
+  final riderId = await ref.watch(currentRiderIdProvider.future);
+  if (riderId == null) return [];
+
+  final api = ref.watch(apiServiceProvider);
+  final response = await api.getDeliveryHistory(riderId, limit: 100);
   if (response.success && response.data != null) return response.data!;
   return [];
 });

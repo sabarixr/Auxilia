@@ -171,6 +171,21 @@ class ApiService {
     );
   }
 
+  Future<ApiResponse<List<DeliveryHistoryItem>>> getDeliveryHistory(
+    String riderId, {
+    int limit = 50,
+  }) async {
+    return get(
+      '/riders/$riderId/delivery-history?limit=$limit',
+      (json) => (json as List)
+          .map(
+            (item) =>
+                DeliveryHistoryItem.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(),
+    );
+  }
+
   Future<ApiResponse<List<Zone>>> getZones() async {
     return get(
       '/zones/',

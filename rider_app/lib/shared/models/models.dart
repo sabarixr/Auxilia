@@ -337,6 +337,66 @@ class TriggerStatusModel {
   String get statusLabel => isActive ? 'TRIGGERED' : 'OK';
 }
 
+class DeliveryHistoryItem {
+  final String id;
+  final String riderId;
+  final String? orderId;
+  final String assignedZoneId;
+  final String? assignedZoneName;
+  final double deliveryLatitude;
+  final double deliveryLongitude;
+  final bool isDeliveryInCoverageZone;
+  final String eligibilityReason;
+  final double computedRiskScore;
+  final double weatherRisk;
+  final double trafficRisk;
+  final double incidentRisk;
+  final DateTime? assessedAt;
+  final DateTime createdAt;
+
+  DeliveryHistoryItem({
+    required this.id,
+    required this.riderId,
+    this.orderId,
+    required this.assignedZoneId,
+    this.assignedZoneName,
+    required this.deliveryLatitude,
+    required this.deliveryLongitude,
+    required this.isDeliveryInCoverageZone,
+    required this.eligibilityReason,
+    required this.computedRiskScore,
+    required this.weatherRisk,
+    required this.trafficRisk,
+    required this.incidentRisk,
+    this.assessedAt,
+    required this.createdAt,
+  });
+
+  factory DeliveryHistoryItem.fromJson(Map<String, dynamic> json) {
+    return DeliveryHistoryItem(
+      id: json['id'] ?? '',
+      riderId: json['rider_id'] ?? '',
+      orderId: json['order_id'],
+      assignedZoneId: json['assigned_zone_id'] ?? '',
+      assignedZoneName: json['assigned_zone_name'],
+      deliveryLatitude: (json['delivery_latitude'] ?? 0).toDouble(),
+      deliveryLongitude: (json['delivery_longitude'] ?? 0).toDouble(),
+      isDeliveryInCoverageZone: json['is_delivery_in_coverage_zone'] ?? false,
+      eligibilityReason: json['eligibility_reason'] ?? '',
+      computedRiskScore: (json['computed_risk_score'] ?? 0).toDouble(),
+      weatherRisk: (json['weather_risk'] ?? 0).toDouble(),
+      trafficRisk: (json['traffic_risk'] ?? 0).toDouble(),
+      incidentRisk: (json['incident_risk'] ?? 0).toDouble(),
+      assessedAt: json['assessed_at'] != null
+          ? DateTime.parse(json['assessed_at'])
+          : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : DateTime.now(),
+    );
+  }
+}
+
 /// Weather data model
 class WeatherData {
   final String zoneId;
