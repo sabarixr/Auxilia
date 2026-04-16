@@ -95,6 +95,20 @@ def _calculate_weekly_adjustment(
     return float(weekly_adjustment), note
 
 
+def _derive_live_zone_factor(
+    static_zone_factor: float,
+    combined_zone_risk: float,
+) -> float:
+    """
+    Blend persisted zone pricing with current local zone conditions.
+    Keeps pricing responsive without letting short-lived spikes fully override
+    the configured base zone profile.
+    """
+    live_zone_factor = 0.9 + (combined_zone_risk * 0.5)
+    blended_zone_factor = (static_zone_factor * 0.55) + (live_zone_factor * 0.45)
+    return round(max(0.8, min(1.75, blended_zone_factor)), 3)
+
+
 def _recommended_coverage_hours(
     persona: PersonaType,
     weather_risk: float,
@@ -405,6 +419,8 @@ async def get_pricing_alerts(
                 float(assessment.get("combined_risk", 0.0)),
             ),
             "risk_level": assessment.get("risk_level", "medium"),
+            "risk_scope": assessment.get("scope", "zone_event"),
+            "event_window_seconds": assessment.get("event_window_seconds"),
             "pricing_note": pricing_note,
             "assessed_at": assessment.get("assessed_at"),
         })
@@ -430,7 +446,11 @@ async def calculate_premium(
         select(Zone).where(Zone.id == zone_id)
     )
     zone = zone_result.scalar_one_or_none()
-    zone_factor = zone.base_premium_factor if zone else 1.0
+    static_zone_factor = zone.base_premium_factor if zone else 1.0
+
+    zone_assessment = await risk_agent.assess_zone_risk(zone_id)
+    combined_zone_risk = float(zone_assessment.get("combined_risk", 0.0))
+    zone_factor = _derive_live_zone_factor(static_zone_factor, combined_zone_risk)
     
     # Get rider risk assessment
     rider_result = await db.execute(
@@ -526,6 +546,12 @@ async def calculate_premium(
         "pricing_note": pricing_note,
         "breakdown": {
             "base": base_premium,
+            "static_zone_factor": round(static_zone_factor, 3),
+            "live_zone_risk": round(combined_zone_risk, 3),
+            "live_zone_premium_multiplier": round(zone_assessment.get("premium_multiplier", 1.0), 3),
+            "zone_risk_level": zone_assessment.get("risk_level", "medium"),
+            "risk_scope": zone_assessment.get("scope", "zone_event"),
+            "event_window_seconds": zone_assessment.get("event_window_seconds"),
             "weekly_adjustment": weekly_adjustment,
             "weekly_premium": round(weekly_premium, 2),
             "risk_score": round(assessment.final_risk_score, 3) if assessment else 0.0,

@@ -207,6 +207,14 @@ async def process_claim_async(
                 trigger_value=trigger_value,
                 threshold=threshold,
                 coverage_amount=policy.coverage,
+                zone_earning_index=float(getattr(zone, "earning_index", 1.0) or 1.0),
+                rider_earning_profile={
+                    "earning_model": getattr(rider, "earning_model", "per_delivery"),
+                    "avg_order_value": getattr(rider, "avg_order_value", 120.0),
+                    "avg_hourly_income": getattr(rider, "avg_hourly_income", 180.0),
+                    "avg_daily_orders": getattr(rider, "avg_daily_orders", 12),
+                    "avg_km_rate": getattr(rider, "avg_km_rate", 18.0),
+                },
                 fraud_score=fraud_assessment.fraud_score,
                 policy_valid=True
             )
@@ -313,13 +321,28 @@ async def get_claim_details(
     
     # Get fraud assessment if available
     fraud_assessment = fraud_agent.get_cached_assessment(claim_id)
+    payout_decision = await payout_agent.get_payout_status(claim_id)
+    earning_context = None
+    if rider or zone:
+        earning_context = payout_agent.get_earning_exposure_details(
+            zone_earning_index=float(getattr(zone, "earning_index", 1.0) or 1.0),
+            rider_earning_profile={
+                "earning_model": getattr(rider, "earning_model", "per_delivery") if rider else "per_delivery",
+                "avg_order_value": getattr(rider, "avg_order_value", 120.0) if rider else 120.0,
+                "avg_hourly_income": getattr(rider, "avg_hourly_income", 180.0) if rider else 180.0,
+                "avg_daily_orders": getattr(rider, "avg_daily_orders", 12) if rider else 12,
+                "avg_km_rate": getattr(rider, "avg_km_rate", 18.0) if rider else 18.0,
+            },
+        )
     
     return {
         "claim": claim,
         "policy": policy,
         "rider": rider,
         "zone": zone,
-        "fraud_assessment": fraud_assessment.model_dump() if fraud_assessment else None
+        "fraud_assessment": fraud_assessment.model_dump() if fraud_assessment else None,
+        "payout_decision": payout_decision.model_dump() if payout_decision else None,
+        "earning_context": earning_context,
     }
 
 
