@@ -20,7 +20,10 @@ export default function RoleGatewayPage() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">
-          <div className="rounded-3xl border border-white/70 bg-white/90 p-7 shadow-xl backdrop-blur">
+          <div className="relative overflow-hidden rounded-3xl border border-white/70 bg-white/90 p-7 shadow-xl backdrop-blur">
+            <div className="pointer-events-none absolute -right-8 -top-8 opacity-10">
+              <Image src="/auxilia-logo.svg" alt="" width={180} height={180} className="h-44 w-44 object-contain" aria-hidden="true" />
+            </div>
             <div className="mb-4 flex items-center gap-3">
               <span className="inline-flex rounded-xl bg-orange-50 p-3 text-orange-600">
                 <Bike className="h-6 w-6" />
