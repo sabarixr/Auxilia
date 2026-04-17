@@ -17,14 +17,24 @@ export default function ClaimsPage() {
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
   const [selectedClaimDetails, setSelectedClaimDetails] = useState<ClaimDetailsResponse | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
+      setError(null);
       try {
-        const [claimItems, claimStats] = await Promise.all([getClaims(), getClaimStats()]);
-        setClaims(claimItems);
-        setStats(claimStats);
+        const [claimsResult, statsResult] = await Promise.allSettled([getClaims(), getClaimStats()]);
+
+        if (claimsResult.status === 'fulfilled') {
+          setClaims(claimsResult.value);
+        } else {
+          setError('Unable to load claims right now.');
+        }
+
+        if (statsResult.status === 'fulfilled') {
+          setStats(statsResult.value);
+        }
       } finally {
         setLoading(false);
       }
@@ -130,6 +140,10 @@ export default function ClaimsPage() {
           </select>
         </div>
       </div>
+
+      {error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      ) : null}
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
