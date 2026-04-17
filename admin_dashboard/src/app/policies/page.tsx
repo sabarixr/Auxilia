@@ -30,20 +30,50 @@ export default function PoliciesPage() {
   const [riders, setRiders] = useState<RiderListItem[]>([]);
   const [zones, setZones] = useState<ZoneListItem[]>([]);
   const [createForm, setCreateForm] = useState({ rider_id: '', zone_id: '', persona: 'qcommerce' as 'qcommerce' | 'food_delivery', duration_days: 7 });  // Weekly default
+  const [error, setError] = useState<string | null>(null);
 
   async function reload() {
-    const [policyItems, policyStats] = await Promise.all([getPolicies(), getPolicyStats()]);
-    setPolicies(policyItems);
-    setStats(policyStats);
+    setError(null);
+    const [policiesResult, statsResult] = await Promise.allSettled([getPolicies(), getPolicyStats()]);
+
+    if (policiesResult.status === 'fulfilled') {
+      setPolicies(policiesResult.value);
+    } else {
+      setError('Unable to load policies right now.');
+    }
+
+    if (statsResult.status === 'fulfilled') {
+      setStats(statsResult.value);
+    }
   }
 
   useEffect(() => {
     async function load() {
-      const [policyItems, policyStats, riderItems, zoneItems] = await Promise.all([getPolicies(), getPolicyStats(), getRiders(), getZones({ is_active: true })]);
-      setPolicies(policyItems);
-      setStats(policyStats);
-      setRiders(riderItems);
-      setZones(zoneItems);
+      setError(null);
+      const [policiesResult, statsResult, ridersResult, zonesResult] = await Promise.allSettled([
+        getPolicies(),
+        getPolicyStats(),
+        getRiders(),
+        getZones({ is_active: true }),
+      ]);
+
+      if (policiesResult.status === 'fulfilled') {
+        setPolicies(policiesResult.value);
+      } else {
+        setError('Some policy data failed to load. Please refresh.');
+      }
+
+      if (statsResult.status === 'fulfilled') {
+        setStats(statsResult.value);
+      }
+
+      if (ridersResult.status === 'fulfilled') {
+        setRiders(ridersResult.value);
+      }
+
+      if (zonesResult.status === 'fulfilled') {
+        setZones(zonesResult.value);
+      }
     }
     void load();
   }, []);
@@ -123,6 +153,10 @@ export default function PoliciesPage() {
           </select>
         </div>
       </div>
+
+      {error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      ) : null}
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">

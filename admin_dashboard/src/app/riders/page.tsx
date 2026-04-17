@@ -18,6 +18,15 @@ import {
 } from '@/lib/api';
 import { cn, formatCurrency, formatDate, getStatusBadgeClass } from '@/lib/utils';
 
+type RiderPersona = 'qcommerce' | 'food_delivery';
+
+type NewRiderForm = {
+  name: string;
+  phone: string;
+  persona: RiderPersona;
+  zone_id: string;
+};
+
 export default function RidersPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -29,23 +38,50 @@ export default function RidersPage() {
   const [selectedClaims, setSelectedClaims] = useState<ClaimListItem[]>([]);
   const [zones, setZones] = useState<ZoneListItem[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newRider, setNewRider] = useState({ name: '', phone: '', persona: 'qcommerce' as const, zone_id: '' });
+  const [newRider, setNewRider] = useState<NewRiderForm>({ name: '', phone: '', persona: 'qcommerce', zone_id: '' });
+  const [error, setError] = useState<string | null>(null);
 
 
   async function reload() {
-    const [items, overview] = await Promise.all([getRiders(), getRiderStats()]);
-    setRiders(items);
-    setStats(overview);
+    setError(null);
+    const [itemsResult, statsResult] = await Promise.allSettled([getRiders(), getRiderStats()]);
+
+    if (itemsResult.status === 'fulfilled') {
+      setRiders(itemsResult.value);
+    } else {
+      setError('Unable to load riders right now.');
+    }
+
+    if (statsResult.status === 'fulfilled') {
+      setStats(statsResult.value);
+    }
   }
 
   useEffect(() => {
     async function load() {
-      const [items, overview, zoneItems] = await Promise.all([getRiders(), getRiderStats(), getZones({ is_active: true })]);
-      setRiders(items);
-      setStats(overview);
-      setZones(zoneItems);
-      if (zoneItems.length > 0) {
-        setNewRider((current) => current.zone_id ? current : { ...current, zone_id: zoneItems[0].id });
+      setError(null);
+      const [itemsResult, overviewResult, zonesResult] = await Promise.allSettled([
+        getRiders(),
+        getRiderStats(),
+        getZones({ is_active: true }),
+      ]);
+
+      if (itemsResult.status === 'fulfilled') {
+        setRiders(itemsResult.value);
+      } else {
+        setError('Some rider data failed to load. Please refresh.');
+      }
+
+      if (overviewResult.status === 'fulfilled') {
+        setStats(overviewResult.value);
+      }
+
+      if (zonesResult.status === 'fulfilled') {
+        const zoneItems = zonesResult.value;
+        setZones(zoneItems);
+        if (zoneItems.length > 0) {
+          setNewRider((current) => current.zone_id ? current : { ...current, zone_id: zoneItems[0].id });
+        }
       }
     }
     void load();
@@ -106,6 +142,10 @@ export default function RidersPage() {
         <div className="flex items-center gap-2"><Filter className="h-4 w-4 text-slate-400" /><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-500"><option value="all">All Status</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="suspended">Suspended</option></select></div>
       </div>
 
+      {error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         {filteredRiders.map((rider) => {
           const avatar = rider.name.split(' ').map((part) => part[0]).slice(0, 2).join('').toUpperCase();
@@ -164,7 +204,7 @@ export default function RidersPage() {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">Persona</label>
-                <select value={newRider.persona} onChange={e => setNewRider({...newRider, persona: e.target.value as any})} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-500">
+                <select value={newRider.persona} onChange={e => setNewRider({...newRider, persona: e.target.value as RiderPersona})} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-500">
                   <option value="qcommerce">Q-Commerce</option>
                   <option value="food_delivery">Food Delivery</option>
                 </select>
