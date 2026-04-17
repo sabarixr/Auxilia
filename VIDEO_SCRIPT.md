@@ -1,105 +1,154 @@
-# Auxilia: Phase 1 Demonstration Video Script
+# Auxilia 5-Minute Demo Script
 
-**Target Length:** 2 minutes  
-**Tone:** Human, confident, practical (not overly technical)  
-**Setup:** Split screen showing Rider App (Flutter) + Admin Dashboard (Next.js)
+This script is designed for a **single-take 5-minute screen recording** that demonstrates the complete flow:
 
----
+1. Simulated external disruption
+2. Automated AI claim validation
+3. Automated payout outcome
 
-## [0:00 - 0:20] What We Built + Who It Is For
+Use this as the narration + click path for your final submission video.
 
-**[VISUAL: Split screen intro - Rider App home + Admin Dashboard overview]**
+## Demo Goal
 
-**Speaker:**  
-"Hi, I'm [Your Name], and this is **Auxilia**.
+Show that Auxilia is not a static dashboard: it is a working parametric protection system where zone-level disruptions trigger AI-assisted claims and payout processing.
 
-Auxilia is a parametric income protection platform for gig workers, with our primary focus on **Q-Commerce riders** - like Zepto and Blinkit delivery partners.
+## Recording Setup (Before You Start)
 
-We are focused on one clear problem: **loss of income when riders cannot deliver**."
+- Keep these tabs/windows ready:
+  - Admin dashboard (`/triggers`, `/claims`, `/analytics`)
+  - Rider app (logged in with seeded rider)
+  - API docs (`/docs`) or terminal for trigger check call
+- Use seeded credentials:
+  - Admin: `admin` / `auxilia123`
+  - Rider: `+919876543200` / `rider123`
+- Ensure backend is running and reachable.
 
----
+## Reliability Prep (Important)
 
-## [0:20 - 0:45] Why This Problem Matters
+To guarantee a visible trigger during recording, temporarily use a low rain threshold in demo env.
 
-**[VISUAL: Rider App dashboard + trigger cards / weather and traffic indicators]**
+Example (demo-only):
 
-**Speaker:**  
-"For delivery riders, one bad weather window, flooded road, or major traffic disruption can wipe out a full day of earnings.
+```env
+RAIN_THRESHOLD_MM=0.1
+```
 
-Traditional insurance usually does not solve this well. It is slow, claim-heavy, and built for different kinds of risk.
+Then restart backend and run one trigger check before recording.
 
-Gig workers need something faster, simpler, and designed around their actual work patterns."
+This creates a deterministic "simulated disruption" moment even if live weather is calm.
 
----
+## 5-Minute Timeline (Screen Capture)
 
-## [0:45 - 1:10] What Is Unique About AuxiliaYour paragraph text
+## 0:00 - 0:35 | Intro + Problem
 
-**[VISUAL: Onboarding flow - Persona -> Zone -> Review -> Policy]**
+Narration:
 
-**Speaker:**  
-"Auxilia is unique in three ways.
+"This is Auxilia, an AI-powered parametric income-protection platform for gig workers. It protects weekly earnings when disruptions like rain, traffic, road incidents, or demand collapse reduce delivery income."
 
-First, **weekly pricing**: riders pay **Rs 99 per week** for Q-Commerce coverage.
+On screen:
 
-Second, our coverage scope is specific: **loss of income only**.
+- Open `README.md` briefly.
+- Show production links:
+  - dashboard
+  - backend API
 
-Third, this is not static insurance. The system uses live delivery context - location, weather, traffic, and disruptions - to drive decisions."
+## 0:35 - 1:20 | Architecture + Why It Is Different
 
----
+Narration:
 
-## [1:10 - 1:35] Why We Use AI (And Why It Is Urgent)
+"Auxilia is zone-first, not city-average. Each zone is monitored independently, and claims are validated using multi-signal checks and fraud controls before payout automation."
 
-**[VISUAL: Admin Dashboard triggers + risk/fraud sections]**
+On screen:
 
-**Speaker:**  
-"We use AI because this problem is real-time, noisy, and adversarial.
+- Open `docs/ARCHITECTURE.md`.
+- Scroll through:
+  - High-Level Diagram
+  - Product Flow Diagram
 
-Simple GPS checks are no longer enough. Spoofing tools can fake coordinates.
+## 1:20 - 2:10 | Simulate External Disruption
 
-If we use only fixed rules, we either reject genuine riders unfairly or approve coordinated fraud.
+Narration:
 
-AI helps us balance both sides: **faster support for real riders** and **better control for insurers**."
+"Now I will simulate an external disruption and trigger a fresh signal check across zones."
 
----
+On screen (choose one):
 
-## [1:35 - 1:52] How AI Is Used in Anti-Spoofing
+- **Option A (Swagger/UI):**
+  - Open `/docs`
+  - Execute `POST /api/v1/triggers/check`
+- **Option B (Terminal):**
 
-**[VISUAL: Architecture/flow page + claims list]**
+```bash
+curl -X POST "https://auxila-api.sabarixr.me/api/v1/triggers/check"
+```
 
-**Speaker:**  
-"Auxilia runs four AI agents, and they work together to detect spoofing:
+Then show evidence:
 
-- **Trigger Agent** monitors weather, traffic, incidents, and demand signals.
-- **Risk Agent** computes dynamic risk from delivery context and zone conditions.
-- **Fraud Agent** checks movement plausibility, duplicate patterns, and swarm anomalies across riders.
-- **Payout Agent** processes approved outcomes and records transaction evidence.
+- Admin `Triggers` page with active trigger count
+- Optional: `GET /api/v1/triggers/history` to show new event entries
 
-When a claim is flagged, we do not blindly reject. We route it to review with clear rider feedback, so honest workers are not punished for network drops in bad weather."
+## 2:10 - 3:10 | Rider Claim Submission
 
----
+Narration:
 
-## [1:52 - 2:00] Close
+"With a live disruption active, the rider submits a claim against an active weekly policy."
 
-**[VISUAL: Split screen - rider app + admin dashboard live state]**
+On screen:
 
-**Speaker:**  
-"In short, Auxilia delivers weekly, practical income protection for gig riders - built for how they actually work. Thank you."
+- Open Rider app dashboard
+- Show active policy card
+- Submit claim (use matching trigger type)
+- Show claim status moving to `pending` / `processing`
 
----
+## 3:10 - 4:20 | AI Validation + Admin Visibility
 
-## Recording Tips
+Narration:
 
-1. Keep this to exactly 2:00 by practicing section timings once
-2. Speak naturally - pause after each section change
-3. Show one clear visual per section; avoid fast tab switching
-4. Use live data where possible (movement, trigger check, claim flow)
-5. End cleanly on the split-screen closing shot
+"Auxilia runs automated fraud and eligibility checks in the background, including zone alignment, trigger evidence, duplicate/frequency checks, and behavior checks."
 
-## Key Phrases to Emphasize
+On screen:
 
-- "Loss of income protection"
-- "Q-Commerce riders"
-- "Rs 99 per week"
-- "Weekly, not monthly"
-- "Real-time parametric triggers"
-- "AI for fairness and speed"
+- Open admin `Claims` page
+- Open the submitted claim detail
+- Highlight:
+  - fraud score
+  - claim decision/status progression
+  - trigger values vs threshold
+
+If manual review appears, explicitly show approve/reject action and explain why.
+
+## 4:20 - 5:00 | Payout Proof + Closing
+
+Narration:
+
+"Eligible claims move to payout simulation, and both rider and insurer views update in near real-time."
+
+On screen:
+
+- Show claim status as approved/paid
+- Show payout amount
+- Show payout log (public or admin view) including transaction hash/reference
+- End on analytics/KPI cards (`earnings protected`, `active weekly coverage`, `loss ratio`, `next-week likely claims`)
+
+Closing line:
+
+"That is the full parametric loop in Auxilia: disruption signal, AI validation, and payout outcome in one integrated workflow."
+
+## Backup Plan (If Trigger Not Active During Recording)
+
+- Re-run trigger check once:
+
+```bash
+curl -X POST "https://auxila-api.sabarixr.me/api/v1/triggers/check"
+```
+
+- Refresh admin Triggers page.
+- If still inactive, use demo threshold override (`RAIN_THRESHOLD_MM=0.1`) and retry.
+
+## Deliverable Checklist
+
+- 5-minute video, publicly accessible link
+- Includes visible simulated disruption event
+- Includes rider claim submission
+- Includes AI-driven claim processing evidence
+- Includes payout outcome evidence
