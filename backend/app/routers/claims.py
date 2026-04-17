@@ -11,7 +11,7 @@ import uuid
 
 from app.core.database import get_db
 from app.core.config import settings
-from app.models.database import Claim, Policy, Rider, Zone
+from app.models.database import Claim, Policy, Rider, Zone, TriggerEvent
 from app.models.schemas import (
     ClaimCreate, ClaimResponse, ClaimWithDetails,
     ClaimStatus, TriggerType, PolicyStatus, APIResponse
@@ -135,6 +135,19 @@ async def create_claim(
     
     # Create claim record
     claim_id = str(uuid.uuid4())
+    trigger_event_id = str(uuid.uuid4())
+
+    trigger_event = TriggerEvent(
+        id=trigger_event_id,
+        zone_id=policy.zone_id,
+        trigger_type=claim.trigger_type.value,
+        value=float(trigger_value),
+        threshold=float(threshold),
+        is_active=trigger_value >= threshold,
+        source="claim_snapshot",
+        raw_data=None,
+        created_at=datetime.utcnow(),
+    )
     
     db_claim = Claim(
         id=claim_id,
@@ -148,10 +161,12 @@ async def create_claim(
         fraud_score=0.0,
         ai_decision=None,
         tx_hash=None,
+        trigger_event_id=trigger_event_id,
         created_at=datetime.utcnow(),
         processed_at=None
     )
     
+    db.add(trigger_event)
     db.add(db_claim)
     await db.commit()
     await db.refresh(db_claim)
@@ -218,7 +233,8 @@ async def process_claim_async(
                 trigger_type=trigger_type.value,
                 rider_location=(rider.latitude, rider.longitude) if rider.latitude else None,
                 trigger_timestamp=datetime.utcnow(),
-                claim_history=claim_history
+                claim_history=claim_history,
+                db_session=db,
             )
             
             claim.fraud_score = fraud_assessment.fraud_score

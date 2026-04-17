@@ -539,10 +539,12 @@ class AgentAction(BaseModel):
 class DashboardStats(BaseModel):
     total_policies: int
     active_policies: int
+    active_weekly_coverage: int
     total_claims: int
     pending_claims: int
     total_premium_collected: float
     total_claims_paid: float
+    earnings_protected: float
     active_riders: int
     avg_risk_score: float
     active_triggers: int

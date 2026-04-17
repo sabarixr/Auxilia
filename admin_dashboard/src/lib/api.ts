@@ -33,10 +33,12 @@ async function apiFetch<T>(path: string, options?: FetchOptions): Promise<T> {
 export type DashboardStatsResponse = {
   total_policies: number;
   active_policies: number;
+  active_weekly_coverage: number;
   total_claims: number;
   pending_claims: number;
   total_premium_collected: number;
   total_claims_paid: number;
+  earnings_protected: number;
   active_riders: number;
   avg_risk_score: number;
   active_triggers: number;
@@ -318,6 +320,26 @@ export type ArchitectureResponse = {
   pipeline: string[];
 };
 
+export type PredictiveClaimsResponse = {
+  generated_at: string;
+  window: string;
+  total_next_week_likely_claims: number;
+  predictions: Array<{
+    zone_id: string;
+    zone_name: string;
+    city: string;
+    active_policies: number;
+    trigger_probabilities: {
+      rain: number;
+      traffic: number;
+      road_disruption: number;
+      surge: number;
+    };
+    likely_trigger_probability: number;
+    next_week_likely_claims: number;
+  }>;
+};
+
 export async function getDashboardStats() {
   return apiFetch<DashboardStatsResponse>('/dashboard/stats');
 }
@@ -513,4 +535,8 @@ export async function getZoneHeatmap(city?: string) {
 
 export async function getArchitecture() {
   return apiFetch<ArchitectureResponse>('/dashboard/architecture');
+}
+
+export async function getPredictiveClaims() {
+  return apiFetch<PredictiveClaimsResponse>('/dashboard/predictive-claims');
 }

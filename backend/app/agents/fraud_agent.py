@@ -6,7 +6,9 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional, Any
+from sqlalchemy import select
 from app.core.config import settings
+from app.models.database import TriggerEvent
 from app.models.schemas import FraudAssessment, ClaimStatus
 from app.services.location_service import location_service
 from app.services.ml_service import fraud_ml_service
@@ -61,6 +63,7 @@ class FraudAgent:
             self._check_frequency(rider_id, claim_history or []),
             self._check_trigger_active(zone_id, trigger_type, trigger_timestamp),
             self._check_behavioral_anomaly(rider_id, claim_history or []),
+            self._check_historical_trigger_evidence(zone_id, trigger_type, db_session),
             return_exceptions=True
         )
         
@@ -93,6 +96,12 @@ class FraudAgent:
         check_results["behavior"] = {"passed": behavior_ok, "details": behavior_details}
         if not behavior_ok:
             risk_flags.append("Behavioral anomaly detected")
+
+        # Process historical trigger evidence check
+        historical_ok, historical_details = self._extract_result(results[5], (True, {}))
+        check_results["historical_trigger"] = {"passed": historical_ok, "details": historical_details}
+        if not historical_ok:
+            risk_flags.append("No historical trigger evidence for claim window")
         
         # Calculate fraud score
         fraud_score, ml_confidence, model_version = self._calculate_fraud_score(check_results)
@@ -325,6 +334,50 @@ class FraudAgent:
         is_normal = anomaly_score < 0.5
         
         return is_normal, details
+
+    async def _check_historical_trigger_evidence(
+        self,
+        zone_id: str,
+        trigger_type: str,
+        db_session=None,
+    ) -> Tuple[bool, Dict]:
+        """
+        Validate claim against recent persisted trigger events.
+        Helps flag fake weather/traffic/disruption claims with no event evidence.
+        """
+        details = {"check": "historical_trigger_evidence"}
+
+        if db_session is None:
+            details["status"] = "skipped_no_db_session"
+            return True, details
+
+        try:
+            lookback_hours = 12
+            cutoff = datetime.utcnow() - timedelta(hours=lookback_hours)
+            result = await db_session.execute(
+                select(TriggerEvent)
+                .where(
+                    TriggerEvent.zone_id == zone_id,
+                    TriggerEvent.trigger_type == trigger_type,
+                    TriggerEvent.is_active == True,
+                    TriggerEvent.created_at >= cutoff,
+                )
+                .order_by(TriggerEvent.created_at.desc())
+                .limit(10)
+            )
+            events = result.scalars().all()
+
+            details["lookback_hours"] = lookback_hours
+            details["matching_active_events"] = len(events)
+            details["has_historical_evidence"] = len(events) > 0
+            if events:
+                details["latest_event_at"] = events[0].created_at.isoformat()
+
+            return len(events) > 0, details
+        except Exception as e:
+            logger.error(f"Historical trigger evidence check error: {e}")
+            details["error"] = str(e)
+            return True, details
     
     def _calculate_fraud_score(self, check_results: Dict) -> Tuple[float, float, str]:
         """
@@ -344,6 +397,7 @@ class FraudAgent:
             "same_hour_pattern": 1.0 if check_results.get("behavior", {}).get("details", {}).get("same_hour_pattern") else 0.0,
             "same_day_pattern": 1.0 if check_results.get("behavior", {}).get("details", {}).get("same_day_pattern") else 0.0,
             "trigger_found": 1.0 if check_results.get("trigger", {}).get("details", {}).get("trigger_found", True) else 0.0,
+            "historical_trigger_fail": 0.0 if check_results.get("historical_trigger", {}).get("passed", True) else 1.0,
         }
 
         try:
@@ -357,6 +411,7 @@ class FraudAgent:
                 + feature_payload["frequency_fail"] * 0.20
                 + feature_payload["trigger_fail"] * 0.15
                 + feature_payload["behavior_fail"] * 0.10
+                + feature_payload["historical_trigger_fail"] * 0.10
             )
             return min(1.0, fallback_score), 0.5, "fallback-v1"
     

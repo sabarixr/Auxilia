@@ -9,17 +9,21 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.core.database import get_db
-from app.models.database import Rider, Policy, Claim, Zone, TriggerEvent
+from app.models.database import Rider, Policy, Claim, Zone
 from app.models.schemas import (
     DashboardStats,
     ClaimStatus,
     PolicyStatus,
-    TriggerType,
     RiderStatus,
     ZoneHeatPoint,
 )
 from app.agents.trigger_agent import trigger_agent, ZONE_CONFIG
 from app.agents.risk_agent import risk_agent
+from app.core.config import settings
+from app.services.weather_service import weather_service
+from app.services.traffic_service import traffic_service
+from app.services.news_service import news_service
+from app.services.surge_service import surge_service
 from app.core.security import require_admin
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"], dependencies=[Depends(require_admin)])
@@ -30,12 +34,22 @@ async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db)
 ):
     """Get main dashboard KPI statistics."""
+    now = datetime.utcnow()
+
     # Policy stats
     total_policies = await db.execute(select(func.count(Policy.id)))
     active_policies = await db.execute(
         select(func.count(Policy.id)).where(
             Policy.status == PolicyStatus.ACTIVE.value,
-            Policy.end_date > datetime.utcnow(),
+            Policy.end_date > now,
+        )
+    )
+    active_weekly_coverage = await db.execute(
+        select(func.count(Policy.id)).where(
+            Policy.status == PolicyStatus.ACTIVE.value,
+            Policy.start_date <= now,
+            Policy.end_date >= now,
+            Policy.end_date <= (now + timedelta(days=7)),
         )
     )
     
@@ -47,6 +61,12 @@ async def get_dashboard_stats(
     
     # Financial stats
     total_premium = await db.execute(select(func.sum(Policy.premium)))
+    protected_coverage = await db.execute(
+        select(func.sum(Policy.coverage)).where(
+            Policy.status == PolicyStatus.ACTIVE.value,
+            Policy.end_date > now,
+        )
+    )
     total_payouts = await db.execute(
         select(func.sum(Claim.amount)).where(
             or_(
@@ -76,15 +96,101 @@ async def get_dashboard_stats(
     return DashboardStats(
         total_policies=total_policies.scalar() or 0,
         active_policies=active_policies.scalar() or 0,
+        active_weekly_coverage=active_weekly_coverage.scalar() or 0,
         total_claims=total_claims.scalar() or 0,
         pending_claims=pending_claims.scalar() or 0,
         total_premium_collected=round(premium, 2),
         total_claims_paid=round(payouts, 2),
+        earnings_protected=round(protected_coverage.scalar() or 0, 2),
         active_riders=active_riders.scalar() or 0,
         avg_risk_score=round(avg_risk.scalar() or 0, 3),
         active_triggers=active_trigger_count,
         loss_ratio=round(loss_ratio, 2)
     )
+
+
+@router.get("/predictive-claims")
+async def get_predictive_claims(
+    db: AsyncSession = Depends(get_db),
+):
+    """Predict next-week likely claims from trigger forecasts and active exposure."""
+    zones_result = await db.execute(select(Zone).where(Zone.is_active == True))
+    zones = zones_result.scalars().all()
+
+    predictions = []
+    total_expected_claims = 0.0
+    generated_at = datetime.utcnow().isoformat()
+
+    for zone in zones:
+        weather_forecast = await weather_service.get_forecast(zone.latitude, zone.longitude, hours=24)
+        traffic = await traffic_service.get_traffic_flow(zone.latitude, zone.longitude)
+        incidents = await news_service.search_incidents(zone.city, "road disruption", hours_back=24)
+        surge_forecast = await surge_service.get_surge_forecast(zone.id, hours_ahead=24)
+
+        rain_hours = len([
+            item for item in weather_forecast
+            if max(float(item.get("rain_1h", 0.0) or 0.0), float(item.get("rain_3h", 0.0) or 0.0) / 3.0)
+            >= settings.RAIN_THRESHOLD_MM
+        ])
+        rain_probability = min(1.0, rain_hours / 24.0)
+
+        traffic_probability = min(
+            1.0,
+            max(0.0, (float(getattr(traffic, "congestion_level", 0.0) or 0.0) - settings.CONGESTION_THRESHOLD) / 20.0),
+        )
+
+        relevant_incidents = len([i for i in incidents if getattr(i, "is_trigger_relevant", False)])
+        incident_probability = min(1.0, relevant_incidents / max(1.0, float(settings.INCIDENT_THRESHOLD * 2)))
+
+        low_surge_hours = len([
+            item for item in surge_forecast
+            if float(item.get("predicted_surge", 99.0) or 99.0) < settings.SURGE_THRESHOLD
+        ])
+        surge_probability = min(1.0, low_surge_hours / max(1.0, float(len(surge_forecast) or 1)))
+
+        active_policy_count_result = await db.execute(
+            select(func.count(Policy.id)).where(
+                Policy.zone_id == zone.id,
+                Policy.status == PolicyStatus.ACTIVE.value,
+                Policy.end_date > datetime.utcnow(),
+            )
+        )
+        active_policy_count = active_policy_count_result.scalar() or 0
+
+        likely_trigger_probability = max(
+            rain_probability,
+            traffic_probability,
+            incident_probability,
+            surge_probability,
+        )
+
+        expected_claims = round(active_policy_count * likely_trigger_probability * 0.55, 2)
+        total_expected_claims += expected_claims
+
+        predictions.append(
+            {
+                "zone_id": zone.id,
+                "zone_name": zone.name,
+                "city": zone.city,
+                "active_policies": active_policy_count,
+                "trigger_probabilities": {
+                    "rain": round(rain_probability, 3),
+                    "traffic": round(traffic_probability, 3),
+                    "road_disruption": round(incident_probability, 3),
+                    "surge": round(surge_probability, 3),
+                },
+                "likely_trigger_probability": round(likely_trigger_probability, 3),
+                "next_week_likely_claims": expected_claims,
+            }
+        )
+
+    predictions.sort(key=lambda item: item["next_week_likely_claims"], reverse=True)
+    return {
+        "generated_at": generated_at,
+        "window": "next_7_days",
+        "predictions": predictions,
+        "total_next_week_likely_claims": round(total_expected_claims, 2),
+    }
 
 
 @router.get("/claims-chart")
