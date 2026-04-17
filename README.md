@@ -17,6 +17,9 @@ Live links:
 - Web dashboard: [https://auxilia.sabarixr.me](https://auxilia.sabarixr.me)
 - Backend API: [https://auxila-api.sabarixr.me](https://auxila-api.sabarixr.me)
 
+Project docs:
+- Presentation deck: [`docs/Auxilia.pptx`](docs/Auxilia.pptx)
+
 ## Core Scope
 
 Auxilia covers **loss of income** from operational disruptions (rain, traffic, road incidents, low-demand surge windows). It is not a health/life/vehicle damage insurance product.
