@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "902147560167",
+    "project_id": "auxilia-740f7",
+    "storage_bucket": "auxilia-740f7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:902147560167:android:0fc6fcc8551a78b5b9c842",
+        "android_client_info": {
+          "package_name": "com.auxilia.rider_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATGw3TiBlSIzuIo7pqMwqMtVD3shhBGJg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
