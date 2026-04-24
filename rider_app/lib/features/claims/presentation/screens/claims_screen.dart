@@ -1,14 +1,96 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
+import 'dart:math';
 
 import '../../../../core/providers/providers.dart';
+import '../../../../core/services/api_service.dart';
 import '../../../../core/theme/theme.dart';
 import '../../../../shared/models/models.dart';
 
 class ClaimsScreen extends ConsumerWidget {
   const ClaimsScreen({super.key});
+
+  Future<void> _testWorkflow(BuildContext context, WidgetRef ref) async {
+    try {
+      // 1. Check permissions and get location
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permissions are denied')),
+          );
+          return;
+        }
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      // 2. Generate random trigger values
+      final random = Random();
+      final triggerValues = {
+        'rain_intensity': random.nextDouble() * 100, // 0 to 100 mm/h
+        'traffic_congestion_index': random.nextDouble() * 10, // 0 to 10
+      };
+
+      // Show loading indicator
+      if (!context.mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // 3. Call backend
+      final response = await apiService.testWorkflow(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        triggerValues: triggerValues,
+      );
+
+      if (!context.mounted) return;
+      Navigator.of(context).pop(); // dismiss loading
+
+      // 4. Show result
+      if (response.success && response.data != null) {
+        final data = response.data!;
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Workflow Result'),
+            content: SingleChildScrollView(child: Text(data.toString())),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  // Refresh claims
+                  ref.invalidate(claimsProvider);
+                  ref.invalidate(claimsSummaryProvider);
+                },
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: ${response.error}')));
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.of(context).pop(); // dismiss loading if error
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed: $e')));
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -17,6 +99,11 @@ class ClaimsScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _testWorkflow(context, ref),
+        icon: const Icon(Icons.science),
+        label: const Text('Test Full Workflow'),
+      ),
       body: SafeArea(
         child: CustomScrollView(
           slivers: [

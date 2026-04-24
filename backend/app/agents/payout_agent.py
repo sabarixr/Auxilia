@@ -7,6 +7,9 @@ import logging
 import httpx
 from datetime import datetime
 from typing import Dict, Optional, Any
+from pathlib import Path
+import firebase_admin
+from firebase_admin import credentials, messaging
 from app.core.config import settings
 from app.models.schemas import PayoutDecision, ClaimStatus
 
@@ -28,6 +31,19 @@ class PayoutAgent:
     def __init__(self):
         self.client = httpx.AsyncClient(timeout=30.0)
         self._payout_history: Dict[str, PayoutDecision] = {}
+        
+        # Initialize Firebase Admin SDK
+        try:
+            if not firebase_admin._apps:
+                creds_path = Path("firebase-adminsdk.json")
+                if creds_path.exists():
+                    cred = credentials.Certificate(str(creds_path))
+                    firebase_admin.initialize_app(cred)
+                    logger.info("Firebase Admin SDK initialized successfully.")
+                else:
+                    logger.warning("firebase-adminsdk.json not found. FCM will run in sandbox mode.")
+        except Exception as e:
+            logger.error(f"Failed to initialize Firebase Admin: {e}")
     
     async def process_payout(
         self,
@@ -54,7 +70,7 @@ class PayoutAgent:
         
         # Step 1: Validate eligibility
         approved, reason = self._validate_payout_eligibility(
-            trigger_value, threshold, fraud_score, policy_valid
+            trigger_type, trigger_value, threshold, fraud_score, policy_valid
         )
         
         if not approved:
@@ -66,7 +82,7 @@ class PayoutAgent:
                 payout_amount=0.0,
                 payout_percentage=0.0,
                 decision_reason=reason,
-                trigger_verification=trigger_value >= threshold,
+                trigger_verification=(trigger_value < threshold if trigger_type == "surge" else trigger_value >= threshold),
                 fraud_check_passed=fraud_score < 0.7,
                 policy_valid=policy_valid,
                 earning_exposure_multiplier=1.0,
@@ -113,7 +129,7 @@ class PayoutAgent:
             payout_amount=round(payout_amount, 2),
             payout_percentage=round(payout_percentage, 2),
             decision_reason=(
-                f"Trigger {trigger_type} verified: {trigger_value} >= {threshold}; "
+                f"Trigger {trigger_type} condition verified for payout; "
                 f"income exposure adjusted for local earning conditions"
             ),
             trigger_verification=True,
@@ -135,6 +151,7 @@ class PayoutAgent:
     
     def _validate_payout_eligibility(
         self,
+        trigger_type: str,
         trigger_value: float,
         threshold: float,
         fraud_score: float,
@@ -152,7 +169,10 @@ class PayoutAgent:
         if fraud_score >= 0.7:
             return False, "Claim requires manual review due to elevated fraud risk"
         
-        if trigger_value < threshold:
+        trigger_met = trigger_value < threshold if trigger_type == "surge" else trigger_value >= threshold
+        if not trigger_met:
+            if trigger_type == "surge":
+                return False, f"Trigger value {trigger_value} is not below surge threshold {threshold}"
             return False, f"Trigger value {trigger_value} below threshold {threshold}"
         
         return True, "All validation checks passed"
@@ -321,7 +341,7 @@ class PayoutAgent:
         trigger_type: str
     ) -> Dict[str, Any]:
         """
-        Send push notification via Firebase FCM.
+        Send push notification via Firebase FCM (V1 API).
         """
         trigger_messages = {
             "rain": "Heavy rain",
@@ -332,37 +352,35 @@ class PayoutAgent:
         
         trigger_msg = trigger_messages.get(trigger_type, "Disruption")
         
-        if not settings.FIREBASE_SERVER_KEY:
+        if not firebase_admin._apps:
             # Sandbox mode
             logger.info(f"FCM sandbox: Notification to {phone} - ₹{amount} payout for {trigger_msg}")
             return {"success": True, "mode": "sandbox"}
         
         try:
-            url = "https://fcm.googleapis.com/fcm/send"
-            payload = {
-                "to": f"/topics/rider_{phone}",
-                "notification": {
-                    "title": "Auxilia - Payout Received!",
-                    "body": f"{trigger_msg} in {zone_name}. Rs.{int(amount)} sent to your UPI."
-                },
-                "data": {
+            message = messaging.Message(
+                notification=messaging.Notification(
+                    title="Auxilia - Payout Received!",
+                    body=f"{trigger_msg} in {zone_name}. Rs.{int(amount)} sent to your UPI."
+                ),
+                data={
                     "amount": str(amount),
                     "zone": zone_name,
                     "trigger": trigger_type,
                     "claim_type": "parametric"
-                }
-            }
-            
-            response = await self.client.post(
-                url,
-                json=payload,
-                headers={"Authorization": f"key={settings.FIREBASE_SERVER_KEY}"}
+                },
+                topic=f"rider_{phone}"
             )
-            return response.json()
+            
+            # Send message using Google's official Admin SDK (uses V1 API automatically)
+            response = await asyncio.to_thread(messaging.send, message)
+            
+            logger.info(f"FCM sent successfully. Message ID: {response}")
+            return {"success": True, "message_id": response, "mode": "fcm_v1"}
             
         except Exception as e:
             logger.error(f"FCM notification error: {e}")
-            return {"success": True, "mode": "sandbox"}
+            return {"success": False, "mode": "fcm_exception"}
     
     async def _record_blockchain(
         self,

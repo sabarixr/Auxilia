@@ -72,3 +72,4 @@ backend/ml/*.joblib
 .cache/
 tmp/
 temp/
+firebase-adminsdk.json

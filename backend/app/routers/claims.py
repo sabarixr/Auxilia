@@ -8,6 +8,7 @@ from sqlalchemy import select, func, or_
 from typing import List, Optional
 from datetime import datetime, timezone
 import uuid
+import random
 
 from app.core.database import get_db
 from app.core.config import settings
@@ -20,6 +21,7 @@ from app.agents.trigger_agent import trigger_agent
 from app.agents.fraud_agent import fraud_agent
 from app.agents.payout_agent import payout_agent
 from app.core.security import get_optional_admin, require_admin
+from app.services.ml_service import risk_ml_service, premium_ml_service, fraud_ml_service
 
 router = APIRouter(prefix="/claims", tags=["Claims"])
 
@@ -28,6 +30,24 @@ def _as_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def _is_trigger_condition_met(trigger_type: TriggerType, trigger_value: float, threshold: float) -> bool:
+    if trigger_type == TriggerType.SURGE:
+        return trigger_value < threshold
+    return trigger_value >= threshold
+
+
+def _random_demo_trigger(trigger_type: TriggerType, threshold: float) -> float:
+    if trigger_type == TriggerType.RAIN:
+        return round(random.uniform(max(0.0, threshold * 0.7), threshold * 1.9), 2)
+    if trigger_type == TriggerType.TRAFFIC:
+        return round(random.uniform(max(0.0, threshold * 0.75), min(100.0, threshold * 1.45)), 2)
+    if trigger_type == TriggerType.ROAD_DISRUPTION:
+        return float(random.randint(max(0, int(threshold) - 1), int(threshold) + 4))
+    if trigger_type == TriggerType.SURGE:
+        return round(random.uniform(max(0.1, threshold * 0.35), threshold * 1.2), 2)
+    return round(random.uniform(max(0.0, threshold * 0.8), threshold * 1.2), 2)
 
 # Trigger thresholds
 TRIGGER_THRESHOLDS = {
@@ -149,7 +169,7 @@ async def create_claim(
         trigger_type=claim.trigger_type.value,
         value=float(trigger_value),
         threshold=float(threshold),
-        is_active=trigger_value >= threshold,
+        is_active=_is_trigger_condition_met(claim.trigger_type, trigger_value, threshold),
         source="claim_snapshot",
         raw_data=None,
         created_at=datetime.utcnow(),
@@ -254,9 +274,10 @@ async def process_claim_async(
                 return
             
             # Check if trigger is valid
-            if trigger_value < threshold:
+            if not _is_trigger_condition_met(trigger_type, trigger_value, threshold):
                 claim.status = ClaimStatus.REJECTED.value
-                claim.ai_decision = f"Trigger not met: {trigger_value} < {threshold}"
+                comparator = "<" if trigger_type == TriggerType.SURGE else ">="
+                claim.ai_decision = f"Trigger not met: expected {comparator} {threshold}, got {trigger_value}"
                 claim.processed_at = datetime.utcnow()
                 await db.commit()
                 return
@@ -522,4 +543,137 @@ async def get_claim_stats(
             "rain": rain_claims.scalar() or 0,
             "traffic": traffic_claims.scalar() or 0
         }
+    }
+
+
+@router.post("/demo/workflow")
+async def run_demo_claim_workflow(
+    rider_id: Optional[str] = None,
+    policy_id: Optional[str] = None,
+    trigger_type: Optional[TriggerType] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Run one end-to-end demo claim through fraud + ML payout pipeline.
+    Trigger value is randomized per trigger type to avoid fixed demo outputs.
+    """
+    selected_policy: Optional[Policy] = None
+
+    if policy_id:
+        selected_policy = (await db.execute(select(Policy).where(Policy.id == policy_id))).scalar_one_or_none()
+    elif rider_id:
+        rider_policies = (
+            await db.execute(
+                select(Policy)
+                .where(Policy.rider_id == rider_id)
+                .order_by(Policy.created_at.desc())
+            )
+        ).scalars().all()
+        selected_policy = next((p for p in rider_policies if p.status == PolicyStatus.ACTIVE.value), None)
+        if selected_policy is None and rider_policies:
+            selected_policy = rider_policies[0]
+    else:
+        selected_policy = (
+            await db.execute(
+                select(Policy)
+                .where(Policy.status == PolicyStatus.ACTIVE.value)
+                .order_by(Policy.created_at.desc())
+            )
+        ).scalars().first()
+
+    if not selected_policy:
+        raise HTTPException(status_code=404, detail="No policy found for demo workflow")
+
+    if selected_policy.status != PolicyStatus.ACTIVE.value:
+        raise HTTPException(status_code=400, detail="Selected policy is not active")
+
+    if _as_utc(selected_policy.end_date) < datetime.now(timezone.utc):
+        selected_policy.status = PolicyStatus.EXPIRED.value
+        await db.commit()
+        raise HTTPException(status_code=400, detail="Selected policy is expired")
+
+    selected_trigger = trigger_type or random.choice(
+        [
+            TriggerType.RAIN,
+            TriggerType.TRAFFIC,
+            TriggerType.ROAD_DISRUPTION,
+            TriggerType.SURGE,
+        ]
+    )
+
+    rider = (await db.execute(select(Rider).where(Rider.id == selected_policy.rider_id))).scalar_one_or_none()
+    if not rider:
+        raise HTTPException(status_code=404, detail="Rider not found for selected policy")
+
+    threshold = TRIGGER_THRESHOLDS.get(selected_trigger, 0)
+    demo_trigger_value = _random_demo_trigger(selected_trigger, float(threshold))
+
+    claim_id = str(uuid.uuid4())
+    trigger_event_id = str(uuid.uuid4())
+    trigger_event = TriggerEvent(
+        id=trigger_event_id,
+        zone_id=selected_policy.zone_id,
+        trigger_type=selected_trigger.value,
+        value=float(demo_trigger_value),
+        threshold=float(threshold),
+        is_active=_is_trigger_condition_met(selected_trigger, demo_trigger_value, float(threshold)),
+        source="demo_randomized",
+        raw_data=None,
+        created_at=datetime.utcnow(),
+    )
+
+    db_claim = Claim(
+        id=claim_id,
+        policy_id=selected_policy.id,
+        rider_id=selected_policy.rider_id,
+        trigger_type=selected_trigger.value,
+        trigger_value=float(demo_trigger_value),
+        threshold=float(threshold),
+        amount=0.0,
+        status=ClaimStatus.PENDING.value,
+        fraud_score=0.0,
+        ai_decision=None,
+        tx_hash=None,
+        trigger_event_id=trigger_event_id,
+        created_at=datetime.utcnow(),
+        processed_at=None,
+    )
+
+    db.add(trigger_event)
+    db.add(db_claim)
+    await db.commit()
+
+    await process_claim_async(
+        claim_id=claim_id,
+        policy=selected_policy,
+        rider=rider,
+        trigger_type=selected_trigger,
+        trigger_value=float(demo_trigger_value),
+        threshold=float(threshold),
+    )
+
+    processed_claim = (await db.execute(select(Claim).where(Claim.id == claim_id))).scalar_one()
+    return {
+        "success": True,
+        "workflow": "demo_claim_ml_pipeline",
+        "claim_id": processed_claim.id,
+        "policy_id": processed_claim.policy_id,
+        "rider_id": processed_claim.rider_id,
+        "trigger_type": processed_claim.trigger_type,
+        "trigger_value": processed_claim.trigger_value,
+        "threshold": processed_claim.threshold,
+        "status": processed_claim.status,
+        "amount": processed_claim.amount,
+        "fraud_score": processed_claim.fraud_score,
+        "ai_decision": processed_claim.ai_decision,
+        "tx_hash": processed_claim.tx_hash,
+    }
+
+
+@router.get("/demo/model-health")
+async def get_demo_model_health():
+    return {
+        "risk_model_version": risk_ml_service.model_version,
+        "premium_model_version": premium_ml_service.model_version,
+        "fraud_model_version": fraud_ml_service.model_version,
     }

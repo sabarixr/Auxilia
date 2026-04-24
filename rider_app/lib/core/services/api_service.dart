@@ -356,6 +356,18 @@ class ApiService {
     }, (json) => Claim.fromJson(json as Map<String, dynamic>));
   }
 
+  Future<ApiResponse<Map<String, dynamic>>> testWorkflow({
+    required double latitude,
+    required double longitude,
+    required Map<String, dynamic> triggerValues,
+  }) async {
+    return post('/claims/demo/workflow', {
+      'latitude': latitude,
+      'longitude': longitude,
+      'trigger_values': triggerValues,
+    }, (json) => json as Map<String, dynamic>);
+  }
+
   Future<ApiResponse<Map<String, dynamic>>> getClaimsSummary(
     String riderId,
   ) async {
