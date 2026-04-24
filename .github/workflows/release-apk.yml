@@ -31,6 +31,21 @@ jobs:
         with:
           channel: stable
 
+      - name: Materialize Firebase config files from secrets
+        env:
+          FIREBASE_ANDROID_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_ANDROID_GOOGLE_SERVICES_JSON }}
+          FIREBASE_IOS_GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.FIREBASE_IOS_GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -z "$FIREBASE_ANDROID_GOOGLE_SERVICES_JSON" ]; then
+            echo "Missing secret: FIREBASE_ANDROID_GOOGLE_SERVICES_JSON"
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_ANDROID_GOOGLE_SERVICES_JSON" > android/app/google-services.json
+
+          if [ -n "$FIREBASE_IOS_GOOGLE_SERVICE_INFO_PLIST" ]; then
+            printf '%s' "$FIREBASE_IOS_GOOGLE_SERVICE_INFO_PLIST" > ios/Runner/GoogleService-Info.plist
+          fi
+
       - name: Install dependencies
         run: flutter pub get
 
