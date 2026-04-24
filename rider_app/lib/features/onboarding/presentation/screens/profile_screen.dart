@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,6 +50,75 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     });
   }
 
+  Future<Zone> _resolveOnboardingZone() async {
+    final api = ref.read(apiServiceProvider);
+
+    Zone fallbackZone;
+    final zonesResponse = await api.getZones();
+    if (zonesResponse.success &&
+        zonesResponse.data != null &&
+        zonesResponse.data!.isNotEmpty) {
+      fallbackZone = zonesResponse.data!.first;
+    } else {
+      fallbackZone = Zone(
+        id: 'blr-hsr',
+        name: 'HSR Layout',
+        city: 'Bengaluru',
+        state: 'Karnataka',
+        country: 'IN',
+        latitude: 12.9116,
+        longitude: 77.6389,
+        radiusKm: 3,
+        riskLevel: 'medium',
+        basePremiumFactor: 1.0,
+        isActive: true,
+      );
+    }
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return fallbackZone;
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return fallbackZone;
+      }
+
+      final position = await Geolocator.getCurrentPosition();
+      final resolved = await api.resolveNearestZone(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      if (resolved.success && resolved.data != null) {
+        return Zone.fromJson({
+          ...(resolved.data!['zone'] as Map<String, dynamic>),
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+        });
+      }
+
+      return Zone(
+        id: fallbackZone.id,
+        name: fallbackZone.name,
+        city: fallbackZone.city,
+        state: fallbackZone.state,
+        country: fallbackZone.country,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        radiusKm: fallbackZone.radiusKm,
+        riskLevel: fallbackZone.riskLevel,
+        basePremiumFactor: fallbackZone.basePremiumFactor,
+        isActive: fallbackZone.isActive,
+      );
+    } catch (_) {
+      return fallbackZone;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -95,10 +165,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: AppColors.secondary.withOpacity(0.08),
+                        color: AppColors.secondary.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: AppColors.secondary.withOpacity(0.3),
+                          color: AppColors.secondary.withValues(alpha: 0.3),
                           style: BorderStyle.solid,
                         ),
                       ),
@@ -225,8 +295,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 height: 56,
                 child: ElevatedButton(
                   onPressed: _isValid
-                      ? () {
-                          final onboarding = ref.read(onboardingProvider);
+                      ? () async {
                           ref
                               .read(onboardingProvider.notifier)
                               .setProfile(
@@ -234,23 +303,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 phone: _phoneController.text.trim(),
                                 password: _passwordController.text,
                               );
-                          ref.read(onboardingProvider.notifier).setZone(
-                            Zone(
-                              id: 'route_pending',
-                              name: 'Route risk at delivery start',
-                              city: 'Dynamic route',
-                              state: null,
-                              country: 'IN',
-                              latitude: 0,
-                              longitude: 0,
-                              radiusKm: 0,
-                              riskLevel: 'medium',
-                              basePremiumFactor: onboarding.persona == 'qcommerce'
-                                  ? 1.15
-                                  : 1.1,
-                              isActive: true,
-                            ),
-                          );
+                          final zone = await _resolveOnboardingZone();
+                          ref.read(onboardingProvider.notifier).setZone(zone);
+                          if (!mounted || !context.mounted) return;
                           context.go(AppRoutes.review);
                         }
                       : null,

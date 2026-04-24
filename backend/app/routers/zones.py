@@ -9,12 +9,14 @@ from typing import List, Optional
 from datetime import datetime
 import uuid
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.database import Zone, Policy, Claim
 from app.models.schemas import ZoneCreate, ZoneResponse, ZoneWithTriggers, PolicyStatus, InsurerZoneCreate
 from app.agents.trigger_agent import trigger_agent, ZONE_CONFIG
 from app.agents.risk_agent import risk_agent
 from app.services.location_service import location_service
+from app.services.zone_resolution import resolve_zone_from_coordinates
 
 router = APIRouter(prefix="/zones", tags=["Zones"])
 
@@ -171,6 +173,40 @@ async def get_configured_zones():
             for zone_id, zone in ZONE_CONFIG.items()
         ],
         "total": len(ZONE_CONFIG)
+    }
+
+
+@router.get("/resolve-nearest")
+async def resolve_nearest_zone(
+    latitude: float,
+    longitude: float,
+    db: AsyncSession = Depends(get_db),
+):
+    resolved = await resolve_zone_from_coordinates(
+        db,
+        latitude,
+        longitude,
+        max_distance_km=settings.DELIVERY_ZONE_MAX_RADIUS_KM,
+    )
+    zone = resolved["zone"]
+    return {
+        "zone": {
+            "id": zone.id,
+            "name": zone.name,
+            "city": zone.city,
+            "state": zone.state,
+            "country": zone.country,
+            "latitude": zone.latitude,
+            "longitude": zone.longitude,
+            "radius_km": zone.radius_km,
+            "risk_level": zone.risk_level,
+            "base_premium_factor": zone.base_premium_factor,
+            "is_active": zone.is_active,
+        },
+        "distance_meters": resolved["distance_meters"],
+        "resolved_from": resolved["resolved_from"],
+        "locality": resolved["locality"],
+        "display_name": resolved["display_name"],
     }
 
 

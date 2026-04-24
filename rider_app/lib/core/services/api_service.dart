@@ -114,6 +114,8 @@ class ApiService {
     required String persona,
     required String zoneId,
     String? email,
+    double? latitude,
+    double? longitude,
   }) async {
     final normalizedPhone = phone.startsWith('+') ? phone : '+91$phone';
     return post(
@@ -125,8 +127,20 @@ class ApiService {
         'email': email,
         'persona': persona,
         'zone_id': zoneId,
+        'latitude': latitude,
+        'longitude': longitude,
       },
       (json) => RiderAuthSession.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> resolveNearestZone({
+    required double latitude,
+    required double longitude,
+  }) async {
+    return get(
+      '/zones/resolve-nearest?latitude=$latitude&longitude=$longitude',
+      (json) => json as Map<String, dynamic>,
     );
   }
 
@@ -522,7 +536,7 @@ class ApiService {
 
   Future<bool> healthCheck() async {
     try {
-      final uri = Uri.parse(baseUrl.replaceFirst('/api/v1', '') + '/health');
+      final uri = Uri.parse('${baseUrl.replaceFirst('/api/v1', '')}/health');
       final response = await _dio.getUri(uri);
       return response.statusCode == 200;
     } catch (_) {

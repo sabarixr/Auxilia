@@ -27,11 +27,18 @@ from app.models.schemas import (
     PolicyStatus,
 )
 from app.routers.policies import calculate_premium, generate_policy_hash
+from app.services.zone_resolution import resolve_policy_zone_for_rider
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
 POINT_VALUE_INR = 0.25
 MAX_REDEEM_SHARE = 0.75
+
+
+def _coerce_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 async def _award_no_claim_loyalty_points(db: AsyncSession, rider_id: str) -> int:
@@ -90,10 +97,17 @@ async def _resolve_policy_context(payload: PolicyPaymentOrderRequest | PolicyPay
         if not rider:
             raise HTTPException(status_code=404, detail="Rider not found")
 
+        zone_resolution = await resolve_policy_zone_for_rider(
+            db,
+            rider,
+            preferred_zone_id=existing_policy.zone_id,
+            fallback_zone_id=existing_policy.zone_id,
+        )
+
         return {
             "rider": rider,
             "rider_id": existing_policy.rider_id,
-            "zone_id": existing_policy.zone_id,
+            "zone_id": zone_resolution["zone"].id,
             "persona": PersonaType(existing_policy.persona),
             "duration_days": payload.duration_days,
             "existing_policy": existing_policy,
@@ -107,7 +121,11 @@ async def _resolve_policy_context(payload: PolicyPaymentOrderRequest | PolicyPay
     if not rider:
         raise HTTPException(status_code=404, detail="Rider not found")
 
-    await _ensure_zone_exists(db=db, zone_id=payload.zone_id, rider=rider)
+    zone_resolution = await resolve_policy_zone_for_rider(
+        db,
+        rider,
+        preferred_zone_id=payload.zone_id,
+    )
 
     existing_active = await db.execute(
         select(Policy).where(
@@ -122,41 +140,11 @@ async def _resolve_policy_context(payload: PolicyPaymentOrderRequest | PolicyPay
     return {
         "rider": rider,
         "rider_id": payload.rider_id,
-        "zone_id": payload.zone_id,
+        "zone_id": zone_resolution["zone"].id,
         "persona": payload.persona,
         "duration_days": payload.duration_days,
         "existing_policy": None,
     }
-
-
-async def _ensure_zone_exists(db: AsyncSession, zone_id: str, rider: Rider) -> None:
-    zone_result = await db.execute(select(Zone).where(Zone.id == zone_id))
-    zone = zone_result.scalar_one_or_none()
-    if zone is not None:
-        return
-
-    if zone_id != "route_pending":
-        raise HTTPException(status_code=400, detail=f"Invalid zone_id: {zone_id}")
-
-    # Safety net for onboarding demo flow where route zone is resolved later.
-    # Keeping this id stable prevents payment confirmation from failing on FK.
-    db.add(
-        Zone(
-            id="route_pending",
-            name="Route Risk Pending",
-            city="Dynamic Route",
-            state=None,
-            country="IN",
-            latitude=float(rider.latitude or 0.0),
-            longitude=float(rider.longitude or 0.0),
-            radius_km=1.0,
-            risk_level="medium",
-            base_premium_factor=1.0,
-            is_active=True,
-            created_at=datetime.utcnow(),
-        )
-    )
-    await db.flush()
 
 
 def _verify_signature(order_id: str, payment_id: str, signature: str | None) -> bool:
@@ -307,7 +295,7 @@ async def confirm_policy_payment(
 
     start_date = now
     if ctx["existing_policy"] is not None:
-        start_date = max(now, ctx["existing_policy"].end_date)
+        start_date = max(_coerce_utc(now), _coerce_utc(ctx["existing_policy"].end_date)).replace(tzinfo=None)
         ctx["existing_policy"].status = PolicyStatus.EXPIRED.value
 
     policy = Policy(

@@ -1,31 +1,20 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Filter, Download, UserPlus, Eye, MoreVertical, Phone, MapPin, Bike } from 'lucide-react';
+import { Search, Filter, Download, Eye, MoreVertical, Phone, MapPin, Bike } from 'lucide-react';
 import {
   getRider,
   getRiderClaims,
   getRiderPolicies,
   getRiders,
   getRiderStats,
-  getZones,
   type RiderListItem,
   type RiderStatsResponse,
   type ClaimListItem,
   type PolicyListItem,
-  type ZoneListItem,
-  updateRider, createRider,
+  updateRider,
 } from '@/lib/api';
 import { cn, formatCurrency, formatDate, getStatusBadgeClass } from '@/lib/utils';
-
-type RiderPersona = 'qcommerce' | 'food_delivery';
-
-type NewRiderForm = {
-  name: string;
-  phone: string;
-  persona: RiderPersona;
-  zone_id: string;
-};
 
 export default function RidersPage() {
   const [statusFilter, setStatusFilter] = useState('all');
@@ -36,9 +25,6 @@ export default function RidersPage() {
   const [selectedRider, setSelectedRider] = useState<RiderListItem | null>(null);
   const [selectedPolicies, setSelectedPolicies] = useState<PolicyListItem[]>([]);
   const [selectedClaims, setSelectedClaims] = useState<ClaimListItem[]>([]);
-  const [zones, setZones] = useState<ZoneListItem[]>([]);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newRider, setNewRider] = useState<NewRiderForm>({ name: '', phone: '', persona: 'qcommerce', zone_id: '' });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -62,10 +48,9 @@ export default function RidersPage() {
     async function load() {
       setLoading(true);
       setError(null);
-      const [itemsResult, overviewResult, zonesResult] = await Promise.allSettled([
+      const [itemsResult, overviewResult] = await Promise.allSettled([
         getRiders(),
         getRiderStats(),
-        getZones({ is_active: true }),
       ]);
 
       if (itemsResult.status === 'fulfilled') {
@@ -76,14 +61,6 @@ export default function RidersPage() {
 
       if (overviewResult.status === 'fulfilled') {
         setStats(overviewResult.value);
-      }
-
-      if (zonesResult.status === 'fulfilled') {
-        const zoneItems = zonesResult.value;
-        setZones(zoneItems);
-        if (zoneItems.length > 0) {
-          setNewRider((current) => current.zone_id ? current : { ...current, zone_id: zoneItems[0].id });
-        }
       }
 
       setLoading(false);
@@ -123,9 +100,6 @@ export default function RidersPage() {
             a.click();
           }} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
             <Download className="h-4 w-4" /> Export
-          </button>
-          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-orange-600">
-            <UserPlus className="h-4 w-4" /> Add Rider
           </button>
         </div>
       </div>
@@ -208,44 +182,6 @@ export default function RidersPage() {
         })}
       </div> : null}
 
-      {showAddModal ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setShowAddModal(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900">Add New Rider</h3>
-            <div className="mt-4 space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Name</label>
-                <input type="text" value={newRider.name} onChange={e => setNewRider({...newRider, name: e.target.value})} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-500" placeholder="John Doe" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Phone</label>
-                <input type="text" value={newRider.phone} onChange={e => setNewRider({...newRider, phone: e.target.value})} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-500" placeholder="+919876543210" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Persona</label>
-                <select value={newRider.persona} onChange={e => setNewRider({...newRider, persona: e.target.value as RiderPersona})} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-orange-500">
-                  <option value="qcommerce">Q-Commerce</option>
-                  <option value="food_delivery">Food Delivery</option>
-                </select>
-              </div>
-              <div className="rounded-xl border border-orange-100 bg-orange-50 p-3 text-sm text-orange-900">
-                Rider risk routing is delivery-driven. Auxilia will infer active risk from delivery destination and route path instead of manual zone assignment.
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => setShowAddModal(false)} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">Cancel</button>
-              <button onClick={async () => {
-                if (!newRider.name || !newRider.phone || !newRider.zone_id) return alert("Please fill all fields");
-                await createRider(newRider);
-                await reload();
-                setShowAddModal(false);
-                setNewRider({ name: '', phone: '', persona: 'qcommerce', zone_id: zones[0]?.id ?? '' });
-              }} className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600">Save Rider</button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      
       {selectedRider ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setSelectedRider(null)}>
           <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>

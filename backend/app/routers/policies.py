@@ -18,6 +18,7 @@ from app.models.schemas import (
 )
 from app.agents.risk_agent import risk_agent
 from app.core.security import get_optional_admin, require_admin
+from app.services.zone_resolution import resolve_policy_zone_for_rider
 import hashlib
 
 router = APIRouter(prefix="/policies", tags=["Policies"])
@@ -447,32 +448,45 @@ async def renew_policy(
     
     if not old_policy:
         raise HTTPException(status_code=404, detail="Policy not found")
+
+    rider_result = await db.execute(select(Rider).where(Rider.id == old_policy.rider_id))
+    rider = rider_result.scalar_one_or_none()
+    if not rider:
+        raise HTTPException(status_code=404, detail="Rider not found")
+
+    zone_resolution = await resolve_policy_zone_for_rider(
+        db,
+        rider,
+        preferred_zone_id=old_policy.zone_id,
+        fallback_zone_id=old_policy.zone_id,
+    )
+    effective_zone_id = zone_resolution["zone"].id
     
     # Create new policy based on old one
     premium_calc = await calculate_premium(
         rider_id=old_policy.rider_id,
-        zone_id=old_policy.zone_id,
+        zone_id=effective_zone_id,
         persona=PersonaType(old_policy.persona),
         duration_days=duration_days,
         db=db
     )
     
     now = datetime.utcnow()
-    start_date = max(now, old_policy.end_date)  # Start after old policy ends
+    start_date = max(_as_utc(now), _as_utc(old_policy.end_date)).replace(tzinfo=None)  # Start after old policy ends
     new_policy_id = str(uuid.uuid4())
     
     # Generate blockchain tx_hash immediately for demo
     tx_hash = generate_policy_hash(
         policy_id=new_policy_id,
         rider_id=old_policy.rider_id,
-        zone_id=old_policy.zone_id,
+        zone_id=effective_zone_id,
         premium=premium_calc["final_premium"]
     )
     
     new_policy = Policy(
         id=new_policy_id,
         rider_id=old_policy.rider_id,
-        zone_id=old_policy.zone_id,
+        zone_id=effective_zone_id,
         persona=old_policy.persona,
         premium=premium_calc["final_premium"],
         coverage=premium_calc["coverage"],

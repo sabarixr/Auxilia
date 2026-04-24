@@ -259,6 +259,8 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
       persona: state.persona!,
       zoneId: state.zoneId!,
       email: state.email,
+      latitude: state.selectedZone?.latitude,
+      longitude: state.selectedZone?.longitude,
     );
 
     if (response.success && response.data != null) {
@@ -281,6 +283,32 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   }) async {
     final response = await _api.loginRider(phone: phone, password: password);
     if (response.success && response.data != null) {
+      final rider = response.data!.rider;
+
+      try {
+        final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (serviceEnabled) {
+          var permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.denied) {
+            permission = await Geolocator.requestPermission();
+          }
+
+          if (permission != LocationPermission.denied &&
+              permission != LocationPermission.deniedForever) {
+            final position = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.bestForNavigation,
+            );
+            await _api.updateRiderLocation(
+              riderId: rider.id,
+              latitude: position.latitude,
+              longitude: position.longitude,
+            );
+          }
+        }
+      } catch (_) {
+        // Do not block login on location failures.
+      }
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('rider_id', response.data!.rider.id);
       await prefs.setString('rider_token', response.data!.accessToken);

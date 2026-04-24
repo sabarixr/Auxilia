@@ -20,6 +20,7 @@ from app.models.schemas import (
 )
 from app.agents.risk_agent import risk_agent
 from app.services.location_service import location_service
+from app.services.zone_resolution import resolve_zone_from_coordinates
 from app.models.database import Zone
 from app.core.config import settings
 from app.core.security import require_admin
@@ -275,10 +276,26 @@ async def update_rider_location(
     
     rider.latitude = latitude
     rider.longitude = longitude
+
+    resolved_zone = await resolve_zone_from_coordinates(
+        db,
+        latitude,
+        longitude,
+        max_distance_km=settings.DELIVERY_ZONE_MAX_RADIUS_KM,
+    )
+    rider.zone_id = resolved_zone["zone"].id
     
     await db.commit()
     
-    return {"success": True, "message": "Location updated"}
+    return {
+        "success": True,
+        "message": "Location and nearest zone updated",
+        "zone_id": resolved_zone["zone"].id,
+        "zone_name": resolved_zone["zone"].name,
+        "resolved_from": resolved_zone["resolved_from"],
+        "distance_meters": resolved_zone["distance_meters"],
+        "locality": resolved_zone["locality"],
+    }
 
 
 @router.post("/{rider_id}/delivery-checkin", response_model=DeliveryCheckInResponse)

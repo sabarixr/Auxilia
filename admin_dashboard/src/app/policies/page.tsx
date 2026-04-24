@@ -1,20 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Filter, Download, Plus, Eye, MoreVertical, Shield, Zap, Bike } from 'lucide-react';
+import { Search, Filter, Download, Eye, MoreVertical, Shield, Zap, Bike } from 'lucide-react';
 import {
   cancelPolicy,
-  createPolicy,
   getPolicies,
   getPolicyDetails,
   getPolicyStats,
-  getRiders,
-  getZones,
   renewPolicy,
   type PolicyListItem,
   type PolicyStatsResponse,
-  type RiderListItem,
-  type ZoneListItem,
   type PolicyDetailsResponse,
 } from '@/lib/api';
 import { cn, formatCurrency, formatDate, getStatusBadgeClass } from '@/lib/utils';
@@ -26,10 +21,6 @@ export default function PoliciesPage() {
   const [stats, setStats] = useState<PolicyStatsResponse | null>(null);
   const [activeMenuPolicyId, setActiveMenuPolicyId] = useState<string | null>(null);
   const [selectedPolicy, setSelectedPolicy] = useState<PolicyDetailsResponse | null>(null);
-  const [showCreatePolicy, setShowCreatePolicy] = useState(false);
-  const [riders, setRiders] = useState<RiderListItem[]>([]);
-  const [zones, setZones] = useState<ZoneListItem[]>([]);
-  const [createForm, setCreateForm] = useState({ rider_id: '', zone_id: '', persona: 'qcommerce' as 'qcommerce' | 'food_delivery', duration_days: 7 });  // Weekly default
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -52,11 +43,9 @@ export default function PoliciesPage() {
     async function load() {
       setLoading(true);
       setError(null);
-      const [policiesResult, statsResult, ridersResult, zonesResult] = await Promise.allSettled([
+      const [policiesResult, statsResult] = await Promise.allSettled([
         getPolicies(),
         getPolicyStats(),
-        getRiders(),
-        getZones({ is_active: true }),
       ]);
 
       if (policiesResult.status === 'fulfilled') {
@@ -67,14 +56,6 @@ export default function PoliciesPage() {
 
       if (statsResult.status === 'fulfilled') {
         setStats(statsResult.value);
-      }
-
-      if (ridersResult.status === 'fulfilled') {
-        setRiders(ridersResult.value);
-      }
-
-      if (zonesResult.status === 'fulfilled') {
-        setZones(zonesResult.value);
       }
 
       setLoading(false);
@@ -116,9 +97,6 @@ export default function PoliciesPage() {
             a.click();
           }} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
             <Download className="h-4 w-4" /> Export
-          </button>
-          <button onClick={() => setShowCreatePolicy(true)} className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-orange-600">
-            <Plus className="h-4 w-4" /> New Policy
           </button>
         </div>
       </div>
@@ -252,42 +230,6 @@ export default function PoliciesPage() {
         </div>
       ) : null}
 
-      {showCreatePolicy ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setShowCreatePolicy(false)}>
-          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900">Create New Policy</h3>
-            <div className="mt-4 grid grid-cols-1 gap-3">
-              <select value={createForm.rider_id} onChange={(e) => setCreateForm((p) => ({ ...p, rider_id: e.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                <option value="">Select rider</option>
-                {riders.map((r) => <option key={r.id} value={r.id}>{r.name} ({r.id.slice(0, 8)})</option>)}
-              </select>
-              <select value={createForm.zone_id} onChange={(e) => setCreateForm((p) => ({ ...p, zone_id: e.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                <option value="">Select zone</option>
-                {zones.map((z) => <option key={z.id} value={z.id}>{z.name} ({z.city})</option>)}
-              </select>
-              <select value={createForm.persona} onChange={(e) => setCreateForm((p) => ({ ...p, persona: e.target.value as 'qcommerce' | 'food_delivery' }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                <option value="qcommerce">Q-Commerce</option>
-                <option value="food_delivery">Food Delivery</option>
-              </select>
-              <input type="number" min={7} max={56} step={7} placeholder="Duration (weeks: 7, 14, 21...)" value={createForm.duration_days} onChange={(e) => setCreateForm((p) => ({ ...p, duration_days: Number(e.target.value) }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-            </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <button onClick={() => setShowCreatePolicy(false)} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">Cancel</button>
-              <button
-                onClick={async () => {
-                  if (!createForm.rider_id || !createForm.zone_id) return;
-                  await createPolicy(createForm);
-                  await reload();
-                  setShowCreatePolicy(false);
-                }}
-                className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600"
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

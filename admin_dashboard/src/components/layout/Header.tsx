@@ -18,6 +18,7 @@ type PricingNotification = Awaited<ReturnType<typeof getPricingAlerts>>['alerts'
 
 export function Header() {
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showAllNotifications, setShowAllNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const currentDateLabel = useMemo(
@@ -69,7 +70,7 @@ export function Header() {
           });
         });
 
-        setNotifications(newNotifs.slice(0, 12));
+        setNotifications(newNotifs);
         setUnreadCount(newNotifs.length);
       } catch (e) {
         console.error("Failed to load notifications", e);
@@ -116,7 +117,7 @@ export function Header() {
                 <h3 className="font-semibold text-slate-900">Notifications</h3>
               </div>
               <div className="max-h-80 overflow-y-auto">
-                {notifications.map((notif) => (
+                {notifications.slice(0, 12).map((notif) => (
                   <div
                     key={notif.id}
                     className="border-b border-slate-50 p-4 transition-colors hover:bg-slate-50"
@@ -127,7 +128,13 @@ export function Header() {
                 ))}
               </div>
               <div className="p-3">
-                <button className="w-full rounded-lg bg-slate-100 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">
+                <button
+                  onClick={() => {
+                    setShowAllNotifications(true);
+                    setShowNotifications(false);
+                  }}
+                  className="w-full rounded-lg bg-slate-100 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200"
+                >
                   View All
                 </button>
               </div>
@@ -141,6 +148,43 @@ export function Header() {
           <ChevronDown className="h-4 w-4" />
         </div>
       </div>
+
+      {showAllNotifications ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={() => setShowAllNotifications(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <h3 className="font-semibold text-slate-900">All Notifications</h3>
+              <button
+                onClick={() => setShowAllNotifications(false)}
+                className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200"
+              >
+                Close
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto">
+              {notifications.length === 0 ? (
+                <p className="p-5 text-sm text-slate-500">No notifications yet.</p>
+              ) : (
+                notifications.map((notif) => (
+                  <div
+                    key={`all-${notif.id}`}
+                    className="border-b border-slate-50 p-4 transition-colors hover:bg-slate-50"
+                  >
+                    <p className="text-sm text-slate-700">{notif.message}</p>
+                    <p className="mt-1 text-xs text-slate-400">{notif.time}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 }
