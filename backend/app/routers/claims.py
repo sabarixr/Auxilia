@@ -49,6 +49,36 @@ def _random_demo_trigger(trigger_type: TriggerType, threshold: float) -> float:
         return round(random.uniform(max(0.1, threshold * 0.35), threshold * 1.2), 2)
     return round(random.uniform(max(0.0, threshold * 0.8), threshold * 1.2), 2)
 
+
+def _random_demo_trigger_mixed(trigger_type: TriggerType, threshold: float) -> float:
+    """
+    Demo/testing generator that intentionally yields both trigger-met and trigger-not-met values.
+    This keeps full-workflow demos realistic and guarantees a mix of paid/rejected outcomes.
+    """
+    met = random.random() < 0.65
+
+    if trigger_type == TriggerType.SURGE:
+        if met:
+            return round(random.uniform(max(0.1, threshold * 0.35), max(0.1, threshold * 0.95)), 2)
+        return round(random.uniform(max(0.1, threshold * 1.02), threshold * 1.55), 2)
+
+    if trigger_type == TriggerType.RAIN:
+        if met:
+            return round(random.uniform(threshold * 1.02, threshold * 1.9), 2)
+        return round(random.uniform(max(0.0, threshold * 0.2), threshold * 0.95), 2)
+
+    if trigger_type == TriggerType.TRAFFIC:
+        if met:
+            return round(random.uniform(threshold * 1.01, min(100.0, threshold * 1.45)), 2)
+        return round(random.uniform(max(0.0, threshold * 0.35), threshold * 0.95), 2)
+
+    if trigger_type == TriggerType.ROAD_DISRUPTION:
+        if met:
+            return float(random.randint(int(max(0, threshold + 1)), int(max(threshold + 1, threshold + 4))))
+        return float(random.randint(max(0, int(threshold) - 3), int(max(0, threshold - 1))))
+
+    return _random_demo_trigger(trigger_type, threshold)
+
 # Trigger thresholds
 TRIGGER_THRESHOLDS = {
     TriggerType.RAIN: settings.RAIN_THRESHOLD_MM,
@@ -436,6 +466,11 @@ async def get_claim_details(
         "zone": zone,
         "fraud_assessment": fraud_assessment.model_dump() if fraud_assessment else None,
         "payout_decision": payout_decision.model_dump() if payout_decision else None,
+        "payout_advisory": {
+            "recommendation": payout_decision.advisory_recommendation,
+            "confidence": payout_decision.advisory_confidence,
+            "reason": payout_decision.advisory_reason,
+        } if payout_decision else None,
         "earning_context": earning_context,
     }
 
@@ -606,7 +641,7 @@ async def run_demo_claim_workflow(
         raise HTTPException(status_code=404, detail="Rider not found for selected policy")
 
     threshold = TRIGGER_THRESHOLDS.get(selected_trigger, 0)
-    demo_trigger_value = _random_demo_trigger(selected_trigger, float(threshold))
+    demo_trigger_value = _random_demo_trigger_mixed(selected_trigger, float(threshold))
 
     claim_id = str(uuid.uuid4())
     trigger_event_id = str(uuid.uuid4())
@@ -666,6 +701,11 @@ async def run_demo_claim_workflow(
         "amount": processed_claim.amount,
         "fraud_score": processed_claim.fraud_score,
         "ai_decision": processed_claim.ai_decision,
+        "payout_advisory": {
+            "recommendation": payout.advisory_recommendation,
+            "confidence": payout.advisory_confidence,
+            "reason": payout.advisory_reason,
+        } if (payout := await payout_agent.get_payout_status(processed_claim.id)) else None,
         "tx_hash": processed_claim.tx_hash,
     }
 

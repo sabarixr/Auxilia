@@ -79,7 +79,7 @@ export function ClaimsChart({ data }: { data: ClaimsChartPoint[] }) {
         </div>
         <div className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-full bg-emerald-500" />
-          <span className="text-sm text-slate-600">Approved</span>
+          <span className="text-sm text-slate-600">Approved/Paid</span>
         </div>
       </div>
     </div>

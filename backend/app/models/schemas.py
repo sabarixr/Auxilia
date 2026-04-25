@@ -466,6 +466,9 @@ class PayoutDecision(BaseModel):
     earning_exposure_multiplier: float = 1.0
     zone_earning_index: float = 1.0
     rider_earning_factor: float = 1.0
+    advisory_recommendation: Optional[str] = None
+    advisory_confidence: Optional[float] = None
+    advisory_reason: Optional[str] = None
     blockchain_tx_hash: Optional[str] = None
     decided_at: datetime
 

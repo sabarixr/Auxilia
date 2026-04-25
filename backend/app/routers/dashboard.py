@@ -207,7 +207,16 @@ async def get_claims_chart_data(
             func.date(Claim.created_at).label("date"),
             func.count(Claim.id).label("total"),
             func.sum(
-                case((Claim.status == ClaimStatus.APPROVED.value, 1), else_=0)
+                case(
+                    (
+                        or_(
+                            Claim.status == ClaimStatus.APPROVED.value,
+                            Claim.status == ClaimStatus.PAID.value,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
             ).label("approved"),
             func.sum(
                 case((Claim.status == ClaimStatus.REJECTED.value, 1), else_=0)

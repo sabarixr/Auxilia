@@ -107,7 +107,9 @@ export default async function DashboardPage() {
               type: trigger.trigger_type,
               current: trigger.current_value,
               threshold: trigger.threshold,
-              isActive: trigger.current_value >= trigger.threshold,
+              isActive: trigger.trigger_type === 'surge'
+                ? trigger.current_value < trigger.threshold
+                : trigger.current_value >= trigger.threshold,
             }))}
           />
         </div>

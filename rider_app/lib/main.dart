@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
 
 import 'core/theme/theme.dart';
 import 'core/router/app_router.dart';
@@ -26,10 +27,10 @@ void main() async {
     ),
   );
 
-  await NotificationService().initialize();
-  await FcmService.instance.initialize();
-
   runApp(const ProviderScope(child: AuxiliaApp()));
+
+  unawaited(NotificationService().initialize());
+  unawaited(FcmService.instance.initialize());
 }
 
 /// Main Auxilia App Widget

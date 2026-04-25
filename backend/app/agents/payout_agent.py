@@ -13,6 +13,7 @@ import firebase_admin
 from firebase_admin import credentials, messaging
 from app.core.config import settings
 from app.models.schemas import PayoutDecision, ClaimStatus
+from app.services.payout_advisory_service import payout_advisory_service
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,23 @@ class PayoutAgent:
         Returns PayoutDecision with transaction details.
         """
         now = datetime.utcnow()
+
+        advisory = await payout_advisory_service.get_payout_advisory(
+            {
+                "claim_id": claim_id,
+                "policy_id": policy_id,
+                "rider_id": rider_id,
+                "trigger_type": trigger_type,
+                "trigger_value": trigger_value,
+                "threshold": threshold,
+                "coverage_amount": coverage_amount,
+                "fraud_score": fraud_score,
+                "policy_valid": policy_valid,
+                "zone_name": zone_name,
+                "zone_earning_index": zone_earning_index,
+                "rider_earning_profile": rider_earning_profile or {},
+            }
+        )
         
         # Step 1: Validate eligibility
         approved, reason = self._validate_payout_eligibility(
@@ -89,6 +107,9 @@ class PayoutAgent:
                 earning_exposure_multiplier=1.0,
                 zone_earning_index=round(float(zone_earning_index or 1.0), 3),
                 rider_earning_factor=1.0,
+                advisory_recommendation=advisory.get("recommendation"),
+                advisory_confidence=advisory.get("confidence"),
+                advisory_reason=advisory.get("rationale"),
                 blockchain_tx_hash=None,
                 decided_at=now
             )
@@ -139,6 +160,9 @@ class PayoutAgent:
             earning_exposure_multiplier=earning_details["earning_exposure_multiplier"],
             zone_earning_index=earning_details["zone_earning_index"],
             rider_earning_factor=earning_details["rider_earning_factor"],
+            advisory_recommendation=advisory.get("recommendation"),
+            advisory_confidence=advisory.get("confidence"),
+            advisory_reason=advisory.get("rationale"),
             blockchain_tx_hash=tx_hash,
             decided_at=now
         )

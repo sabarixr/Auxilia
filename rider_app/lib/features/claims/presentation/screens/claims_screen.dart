@@ -14,6 +14,16 @@ class ClaimsScreen extends ConsumerWidget {
   const ClaimsScreen({super.key});
 
   Future<void> _testWorkflow(BuildContext context, WidgetRef ref) async {
+    var loadingShown = false;
+
+    Future<void> dismissLoadingIfNeeded() async {
+      if (!loadingShown || !context.mounted) {
+        return;
+      }
+      loadingShown = false;
+      await Navigator.of(context, rootNavigator: true).maybePop();
+    }
+
     try {
       // 1. Check permissions and get location
       LocationPermission permission = await Geolocator.checkPermission();
@@ -32,12 +42,10 @@ class ClaimsScreen extends ConsumerWidget {
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      // 2. Generate random trigger values
+      // 2. Pick a random trigger for realistic mixed outcomes
       final random = Random();
-      final triggerValues = {
-        'rain_intensity': random.nextDouble() * 100, // 0 to 100 mm/h
-        'traffic_congestion_index': random.nextDouble() * 10, // 0 to 10
-      };
+      final triggerPool = ['rain', 'traffic', 'road_disruption', 'surge'];
+      final selectedTrigger = triggerPool[random.nextInt(triggerPool.length)];
 
       // Show loading indicator
       if (!context.mounted) return;
@@ -46,16 +54,17 @@ class ClaimsScreen extends ConsumerWidget {
         barrierDismissible: false,
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
+      loadingShown = true;
 
       // 3. Call backend
       final response = await apiService.testWorkflow(
         latitude: position.latitude,
         longitude: position.longitude,
-        triggerValues: triggerValues,
+        triggerValues: {'trigger_type': selectedTrigger},
       );
 
+      await dismissLoadingIfNeeded();
       if (!context.mounted) return;
-      Navigator.of(context).pop(); // dismiss loading
 
       // 4. Show result
       if (response.success && response.data != null) {
@@ -84,8 +93,8 @@ class ClaimsScreen extends ConsumerWidget {
         ).showSnackBar(SnackBar(content: Text('Error: ${response.error}')));
       }
     } catch (e) {
+      await dismissLoadingIfNeeded();
       if (!context.mounted) return;
-      Navigator.of(context).pop(); // dismiss loading if error
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Failed: $e')));
